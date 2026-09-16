@@ -1,0 +1,461 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewer-data" content="viewer-data.json">
+<title>T-Studio 매매 보고서 뷰어</title>
+<style>
+:root{
+  color-scheme:light;
+  --bg:#f9f9f7;--surface:#fcfcfb;--ink:#0b0b0b;--ink2:#52514e;--muted:#898781;--grid:#e1e0d9;--axis:#c3c2b7;--border:rgba(11,11,11,.10);
+  --gain:#e34948;--loss:#2a78d6;--gain-text:#b83432;--loss-text:#1c5cab;--accent:#2a78d6;--wash:rgba(11,11,11,.05);
+  --lane1:#2a78d6;--lane2:#eb6834;--lane3:#1baf7a;--lane4:#eda100;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    color-scheme:dark;
+    --bg:#0d0d0d;--surface:#1a1a19;--ink:#fff;--ink2:#c3c2b7;--muted:#898781;--grid:#2c2c2a;--axis:#383835;--border:rgba(255,255,255,.10);
+    --gain:#e66767;--loss:#3987e5;--gain-text:#e66767;--loss-text:#5598e7;--accent:#3987e5;--wash:rgba(255,255,255,.06);
+    --lane1:#3987e5;--lane2:#d95926;--lane3:#199e70;--lane4:#c98500;
+  }
+}
+:root[data-theme="dark"]{
+  color-scheme:dark;
+  --bg:#0d0d0d;--surface:#1a1a19;--ink:#fff;--ink2:#c3c2b7;--muted:#898781;--grid:#2c2c2a;--axis:#383835;--border:rgba(255,255,255,.10);
+  --gain:#e66767;--loss:#3987e5;--gain-text:#e66767;--loss-text:#5598e7;--accent:#3987e5;--wash:rgba(255,255,255,.06);
+  --lane1:#3987e5;--lane2:#d95926;--lane3:#199e70;--lane4:#c98500;
+}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.5 system-ui,-apple-system,"Segoe UI","Malgun Gothic",sans-serif}
+body{padding:16px;max-width:1180px;margin:0 auto}
+h1{font-size:18px;margin:0;font-weight:700}
+h2{font-size:15px;margin:0 0 8px;font-weight:700}
+h3{font-size:13px;margin:0 0 6px;font-weight:700;color:var(--ink2)}
+.top{display:flex;flex-wrap:wrap;gap:8px 16px;align-items:center;justify-content:space-between;margin-bottom:12px}
+.top .meta{color:var(--muted);font-size:12px}
+.top>*{min-width:0;max-width:100%}
+.bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:0 0 12px;max-width:100%}
+select,button{font:inherit;color:var(--ink);background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:5px 9px;max-width:100%}
+.seg{flex-wrap:wrap}
+button{cursor:pointer}
+button.on{background:var(--accent);color:#fff;border-color:transparent}
+button:hover:not(.on){background:var(--wash)}
+.seg{display:inline-flex;border:1px solid var(--border);border-radius:6px;overflow:hidden}
+.seg button{border:0;border-radius:0;border-right:1px solid var(--border)}
+.seg button:last-child{border-right:0}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:12px 14px;margin-bottom:12px}
+.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px;margin-bottom:12px}
+.tile{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:10px 12px}
+.tile .k{font-size:12px;color:var(--muted)}
+.tile .v{font-size:22px;font-weight:700;line-height:1.2;margin-top:2px}
+.tile .v .txt{font-size:14px;font-weight:600;display:block;margin-top:6px}
+.tile .s{font-size:12px;color:var(--ink2);margin-top:2px}
+.gain{color:var(--gain-text)}.loss{color:var(--loss-text)}
+.num{font-variant-numeric:tabular-nums;text-align:right;white-space:nowrap}
+table{border-collapse:collapse;width:100%;font-size:13px}
+th,td{padding:5px 8px;border-bottom:1px solid var(--grid);vertical-align:top}
+th{color:var(--muted);font-weight:600;text-align:left;white-space:nowrap;font-size:12px}
+th.num{text-align:right}
+tr.row{cursor:pointer}
+tr.row:hover td{background:var(--wash)}
+tr.sel td{background:var(--wash);box-shadow:inset 3px 0 var(--accent)}
+.tw{overflow-x:auto}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+@media (max-width:760px){.grid2{grid-template-columns:1fr}}
+.chart{position:relative}
+.chart svg{display:block;width:100%;height:auto;overflow:visible}
+.tip{position:absolute;pointer-events:none;background:var(--ink);color:var(--bg);font-size:12px;padding:4px 8px;border-radius:6px;white-space:nowrap;transform:translate(-50%,-115%);display:none;z-index:2}
+.legend{display:flex;gap:14px;font-size:12px;color:var(--ink2);margin:4px 0 0}
+.legend i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:5px;vertical-align:-1px}
+.lane{display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:5px;vertical-align:0}
+.chip{display:inline-block;padding:1px 7px;border-radius:10px;background:var(--wash);font-size:12px;margin-right:4px}
+.links a{margin-right:12px;color:var(--accent)}
+.warn{font-size:12px;color:var(--ink2);border-left:3px solid var(--lane4);padding:4px 8px;margin:4px 0;background:var(--wash)}
+.small{font-size:12px;color:var(--muted)}
+.empty{color:var(--muted);padding:12px 0}
+.dayhead{display:flex;flex-wrap:wrap;gap:8px 16px;align-items:baseline;justify-content:space-between}
+</style>
+</head>
+<body>
+<div class="top">
+  <div><h1>T-Studio 매매 보고서 뷰어</h1><div class="meta" id="meta">생성 (서버 자료) · 뷰어 형식 v1 · 내부용 · 집계본만 읽는다(원본을 다시 읽지 않는다)</div></div>
+  <div class="bar" id="controls" style="margin:0">
+    <select id="scope"></select>
+    <span class="seg" id="range"></span>
+    <span class="seg" id="tab"></span>
+  </div>
+</div>
+<div id="tiles" class="tiles"></div>
+<div id="main"></div>
+<div id="day"></div>
+<script id="data" type="application/json"></script>
+<script>
+function boot(DATA){
+const LANE_ORDER = DATA.laneOrder, LANE_LABEL = DATA.laneLabel;
+const LANE_COLOR = {MULTI_DAY_OVERSOLD:'var(--lane1)',VOLUME_SURGE_REBOUND:'var(--lane2)',DEEP_DROP_REBOUND:'var(--lane3)',REVERSAL_RECOVERY:'var(--lane4)'};
+const $ = s => document.querySelector(s);
+const esc = s => String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const won = v => v==null ? '—' : (v>0?'+':v<0?'−':'') + Math.abs(Math.round(v)).toLocaleString('ko-KR') + '원';
+const wonPlain = v => v==null ? '—' : Math.round(v).toLocaleString('ko-KR') + '원';
+const pct = (v,d=2) => v==null ? '—' : (v>0?'+':v<0?'−':'') + Math.abs(v).toFixed(d) + '%';
+const pctPlain = (v,d=1) => v==null ? '—' : v.toFixed(d) + '%';
+const n = v => v==null ? '—' : Number(v).toLocaleString('ko-KR');
+const cls = v => v>0?'gain':v<0?'loss':'';
+const hold = s => s==null?'—': s>=3600? Math.floor(s/3600)+'시간 '+Math.floor(s%3600/60)+'분' : Math.floor(s/60)+'분 '+(s%60)+'초';
+const ymd = d => d.slice(0,4)+'-'+d.slice(4,6)+'-'+d.slice(6,8);
+const md = d => d.slice(4,6)+'-'+d.slice(6,8);
+const dow = d => ['일','월','화','수','목','금','토'][new Date(ymd(d)).getDay()];
+function isoWeekKey(d){ const dt=new Date(ymd(d)); const day=(dt.getDay()+6)%7; dt.setDate(dt.getDate()-day); return dt.toISOString().slice(0,10); }
+function monthKey(d){ return d.slice(0,4)+'-'+d.slice(4,6); }
+
+// ── 사람·계좌 묶음 ─────────────────────────────────────────────────────────────
+const groups = [];
+{
+  const map = new Map();
+  for (const d of DATA.days){
+    const key = d.person+'|'+(d.scope||'?');
+    if(!map.has(key)) map.set(key,{key,person:d.person,scope:d.scope,days:[]});
+    map.get(key).days.push(d);
+  }
+  for (const g of map.values()){ g.days.sort((a,b)=>a.day<b.day?-1:1); g.first=g.days[0].day; g.last=g.days[g.days.length-1].day; groups.push(g); }
+  groups.sort((a,b)=> (a.person==='나'?0:1)-(b.person==='나'?0:1) || (a.last<b.last?1:-1));
+}
+const state = { scope: groups.length?groups[0].key:null, range:'all', tab:'daily', day:null };
+try{ const s=JSON.parse(localStorage.getItem('tstudio-viewer')||'{}'); if(groups.some(g=>g.key===s.scope)) Object.assign(state,s); }catch(e){}
+// 주소 끝 #20260915 로 열면 그날을 바로 펼친다(링크로 나눌 수 있게).
+{ const m=/^#(\d{8})$/.exec(location.hash||''); if(m){ const g=groups.find(x=>x.days.some(d=>d.day===m[1])); if(g){ state.scope=g.key; state.day=m[1]; state.tab='daily'; state.range='all'; } }
+  else if(/^#(weekly|monthly|daily)$/.test(location.hash||'')){ state.tab=location.hash.slice(1); state.day=null; } }
+function save(){ try{ localStorage.setItem('tstudio-viewer', JSON.stringify(state)); }catch(e){} try{ history.replaceState(null,'', state.day? '#'+state.day : '#'+state.tab); }catch(e){} }
+
+function groupDays(){
+  const g = groups.find(x=>x.key===state.scope); if(!g) return [];
+  let days = g.days;
+  if(state.range==='7'||state.range==='30'){ days = days.slice(-Number(state.range)); }
+  else if(state.range==='month'){ const m = monthKey(g.last); days = days.filter(d=>monthKey(d.day)===m); }
+  return days;
+}
+function sum(days){
+  const o={trades:0,wins:0,losses:0,flats:0,net:0,cost:0,days:days.length,best:null,worst:null,byLane:{},bySell:{}};
+  for(const d of days){
+    const c=d.counts||{}, m=d.money||{};
+    o.trades+=c.trades||0; o.wins+=c.wins||0; o.losses+=c.losses||0; o.flats+=c.flats||0; o.net+=m.net||0;
+    for(const r of d.rows||[]){ o.cost+=r.cost||0; const l=o.byLane[r.lane]||(o.byLane[r.lane]={trades:0,wins:0,net:0}); l.trades++; if((r.net||0)>0) l.wins++; l.net+=r.net||0;
+      const s=o.bySell[r.sellReason||'—']||(o.bySell[r.sellReason||'—']={trades:0,wins:0,net:0}); s.trades++; if((r.net||0)>0) s.wins++; s.net+=r.net||0; }
+    if(o.best==null||(m.net||0)>o.best.net) o.best={day:d.day,net:m.net||0};
+    if(o.worst==null||(m.net||0)<o.worst.net) o.worst={day:d.day,net:m.net||0};
+  }
+  o.winRate = o.trades? o.wins/o.trades*100 : null;
+  return o;
+}
+
+// ── 머리 컨트롤 ───────────────────────────────────────────────────────────────
+function renderControls(){
+  document.getElementById('controls').style.display='';
+  if(DATA.since||DATA.until){ const m=$('#meta'); if(!m.dataset.range){ m.dataset.range='1'; m.textContent += ` · 담은 범위 ${DATA.since?ymd(DATA.since):'처음'}~${DATA.until?ymd(DATA.until):'마지막 집계본'}`; } }
+  const sel=$('#scope'); sel.innerHTML = groups.map(g=>`<option value="${esc(g.key)}"${g.key===state.scope?' selected':''}>${esc(g.person)} · ${md(g.first)}~${md(g.last)} · ${g.days.length}일 · ${esc((g.scope||'').slice(0,12))}</option>`).join('');
+  sel.onchange = e => { state.scope=e.target.value; state.day=null; save(); render(); };
+  const ranges=[['all','전체'],['30','최근 30일'],['7','최근 7일'],['month','이달']];
+  $('#range').innerHTML = ranges.map(([k,l])=>`<button data-k="${k}" class="${state.range===k?'on':''}">${l}</button>`).join('');
+  $('#range').querySelectorAll('button').forEach(b=>b.onclick=()=>{state.range=b.dataset.k; save(); render();});
+  const tabs=[['daily','일별'],['weekly','주별'],['monthly','월별']];
+  $('#tab').innerHTML = tabs.map(([k,l])=>`<button data-k="${k}" class="${state.tab===k?'on':''}">${l}</button>`).join('');
+  $('#tab').querySelectorAll('button').forEach(b=>b.onclick=()=>{state.tab=b.dataset.k; save(); render();});
+}
+
+// ── 타일 ─────────────────────────────────────────────────────────────────────
+function renderTiles(days){
+  const o=sum(days);
+  const tiles=[
+    ['순손익 합', `<span class="${cls(o.net)}">${won(o.net)}</span>`, `${o.days}거래일 · 비용 ${wonPlain(o.cost)}`],
+    ['거래일 평균', `<span class="${cls(o.net)}">${o.days?won(o.net/o.days):'—'}</span>`, o.best?`최고 ${md(o.best.day)} ${won(o.best.net)}`:''],
+    ['완결 거래', n(o.trades)+'건', `이익 ${o.wins} · 손실 ${o.losses}${o.flats?' · 무 '+o.flats:''}`],
+    ['승률', o.winRate==null?'—':pctPlain(o.winRate), `거래 ${o.trades}건 기준`],
+    ['최저 거래일', o.worst?`<span class="${cls(o.worst.net)}">${won(o.worst.net)}</span>`:'—', o.worst?md(o.worst.day)+' ('+dow(o.worst.day)+')':''],
+  ];
+  $('#tiles').innerHTML = tiles.map(([k,v,s])=>`<div class="tile"><div class="k">${k}</div><div class="v">${v}</div><div class="s">${s}</div></div>`).join('');
+}
+
+// ── 차트 ─────────────────────────────────────────────────────────────────────
+function barChart(items, opt){
+  // items: [{label, value, key}] · 양수 빨강(이익) · 음수 파랑(손실) — 한국 관행.
+  const W=opt.width||900, H=opt.height||220, L=64, R=12, T=14, B=34, iw=W-L-R, ih=H-T-B;
+  const vals=items.map(i=>i.value||0); let mx=Math.max(0,...vals), mn=Math.min(0,...vals); if(mx===mn){mx=1;mn=-1;}
+  const pad=(mx-mn)*0.08; mx+=pad; mn-=pad;
+  const y=v=>T+(mx-v)/(mx-mn)*ih, y0=y(0);
+  const slot=iw/Math.max(items.length,1), bw=Math.max(3,Math.min(28,slot-2));
+  const ticks=niceTicks(mn,mx,4);
+  let s=`<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(opt.title)}">`;
+  for(const t of ticks) s+=`<line x1="${L}" x2="${W-R}" y1="${y(t)}" y2="${y(t)}" stroke="var(--grid)" stroke-width="1"/><text x="${L-6}" y="${y(t)+4}" text-anchor="end" font-size="11" fill="var(--muted)">${opt.fmtAxis(t)}</text>`;
+  s+=`<line x1="${L}" x2="${W-R}" y1="${y0}" y2="${y0}" stroke="var(--axis)" stroke-width="1"/>`;
+  const every=Math.ceil(items.length/Math.max(1,Math.floor(iw/46)));
+  items.forEach((it,i)=>{
+    const v=it.value||0, x=L+i*slot+(slot-bw)/2, top=Math.min(y(v),y0), h=Math.max(1,Math.abs(y(v)-y0));
+    const r=Math.min(4,bw/2);
+    const path = v>=0 ? `M${x},${y0} V${top+r} a${r},${r} 0 0 1 ${r},-${r} H${x+bw-r} a${r},${r} 0 0 1 ${r},${r} V${y0} Z`
+                      : `M${x},${y0} V${top+h-r} a${r},${r} 0 0 0 ${r},${r} H${x+bw-r} a${r},${r} 0 0 0 ${r},-${r} V${y0} Z`;
+    s+=`<path d="${path}" fill="${v>=0?'var(--gain)':'var(--loss)'}" data-i="${i}"/>`;
+    s+=`<rect x="${L+i*slot}" y="${T}" width="${slot}" height="${ih}" fill="transparent" data-i="${i}" class="hit" style="cursor:${opt.onPick?'pointer':'default'}"/>`;
+    if(i%every===0) s+=`<text x="${x+bw/2}" y="${H-B+16}" text-anchor="middle" font-size="11" fill="var(--muted)">${esc(it.label)}</text>`;
+  });
+  s+=`</svg><div class="tip"></div>`;
+  return attach(s, items, opt);
+}
+function lineChart(items, opt){
+  const W=opt.width||900, H=opt.height||220, L=64, R=12, T=14, B=34, iw=W-L-R, ih=H-T-B;
+  const vals=items.map(i=>i.value||0); let mx=Math.max(0,...vals), mn=Math.min(0,...vals); if(mx===mn){mx=1;mn=-1;}
+  const pad=(mx-mn)*0.08; mx+=pad; mn-=pad;
+  const y=v=>T+(mx-v)/(mx-mn)*ih, y0=y(0), slot=iw/Math.max(items.length,1), x=i=>L+i*slot+slot/2;
+  const ticks=niceTicks(mn,mx,4);
+  let s=`<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(opt.title)}">`;
+  for(const t of ticks) s+=`<line x1="${L}" x2="${W-R}" y1="${y(t)}" y2="${y(t)}" stroke="var(--grid)"/><text x="${L-6}" y="${y(t)+4}" text-anchor="end" font-size="11" fill="var(--muted)">${opt.fmtAxis(t)}</text>`;
+  s+=`<line x1="${L}" x2="${W-R}" y1="${y0}" y2="${y0}" stroke="var(--axis)"/>`;
+  const pts=items.map((it,i)=>`${x(i)},${y(it.value||0)}`).join(' ');
+  s+=`<polyline points="${pts}" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linejoin="round"/>`;
+  const every=Math.ceil(items.length/Math.max(1,Math.floor(iw/46)));
+  items.forEach((it,i)=>{
+    s+=`<circle cx="${x(i)}" cy="${y(it.value||0)}" r="3.5" fill="var(--accent)" stroke="var(--surface)" stroke-width="2"/>`;
+    s+=`<rect x="${L+i*slot}" y="${T}" width="${slot}" height="${ih}" fill="transparent" data-i="${i}" class="hit" style="cursor:${opt.onPick?'pointer':'default'}"/>`;
+    if(i%every===0) s+=`<text x="${x(i)}" y="${H-B+16}" text-anchor="middle" font-size="11" fill="var(--muted)">${esc(it.label)}</text>`;
+  });
+  s+=`</svg><div class="tip"></div>`;
+  return attach(s, items, opt);
+}
+function niceTicks(mn,mx,count){
+  const span=mx-mn, raw=span/count, p=Math.pow(10,Math.floor(Math.log10(raw))), m=raw/p, step=(m<1.5?1:m<3?2:m<7?5:10)*p;
+  const out=[]; for(let v=Math.ceil(mn/step)*step; v<=mx; v+=step) out.push(Math.abs(v)<1e-9?0:v); return out;
+}
+function attach(svg, items, opt){
+  const el=document.createElement('div'); el.className='chart'; el.innerHTML=svg;
+  const tip=el.querySelector('.tip');
+  el.querySelectorAll('.hit').forEach(r=>{
+    r.addEventListener('mousemove',e=>{ const it=items[+r.dataset.i]; tip.style.display='block'; tip.innerHTML=opt.tip(it); const b=el.getBoundingClientRect(); tip.style.left=(e.clientX-b.left)+'px'; tip.style.top=(e.clientY-b.top)+'px'; });
+    r.addEventListener('mouseleave',()=>tip.style.display='none');
+    if(opt.onPick) r.addEventListener('click',()=>opt.onPick(items[+r.dataset.i]));
+  });
+  return el;
+}
+const axisWon = v => Math.abs(v)>=10000 ? (v/10000).toFixed(Math.abs(v)>=100000?0:1)+'만' : Math.round(v).toLocaleString('ko-KR');
+
+// ── 본문 ─────────────────────────────────────────────────────────────────────
+function render(){
+  renderControls();
+  const days=groupDays();
+  renderTiles(days);
+  const main=$('#main'); main.innerHTML='';
+  if(!days.length){ main.innerHTML='<div class="card empty">이 범위에 집계본이 없다.</div>'; $('#day').innerHTML=''; return; }
+  if(state.tab==='daily') renderDaily(days, main);
+  else renderPeriod(days, main, state.tab==='weekly'?isoWeekKey:monthKey, state.tab==='weekly'?'주':'월');
+  if(state.day && !days.some(d=>d.day===state.day)) state.day=null;
+  renderDay(days.find(d=>d.day===state.day));
+}
+
+function renderDaily(days, main){
+  const pick = it => { state.day=it.key; save(); render(); document.getElementById('day').scrollIntoView({behavior:'smooth',block:'start'}); };
+  const bars=days.map(d=>({key:d.day,label:md(d.day),value:(d.money||{}).net||0,d}));
+  let acc=0; const cum=days.map(d=>({key:d.day,label:md(d.day),value:(acc+=((d.money||{}).net||0)),d}));
+  const c1=document.createElement('div'); c1.className='card'; c1.innerHTML='<h2>날짜별 순손익</h2>';
+  c1.appendChild(barChart(bars,{title:'날짜별 순손익',fmtAxis:axisWon,onPick:pick,tip:it=>`${ymd(it.key)} (${dow(it.key)}) · ${won(it.value)} · ${(it.d.counts||{}).trades||0}건`}));
+  c1.insertAdjacentHTML('beforeend','<div class="legend"><span><i style="background:var(--gain)"></i>이익</span><span><i style="background:var(--loss)"></i>손실</span><span class="small">막대를 누르면 그날로 내려간다</span></div>');
+  const c2=document.createElement('div'); c2.className='card'; c2.innerHTML='<h2>누적 순손익</h2>';
+  c2.appendChild(lineChart(cum,{title:'누적 순손익',fmtAxis:axisWon,onPick:pick,tip:it=>`${ymd(it.key)}까지 누적 ${won(it.value)}`}));
+  const g=document.createElement('div'); g.className='grid2'; g.appendChild(c1); g.appendChild(c2); main.appendChild(g);
+
+  const o=sum(days);
+  const laneRows=LANE_ORDER.map(l=>{const v=o.byLane[l]||{trades:0,wins:0,net:0}; return `<tr><td><span class="lane" style="background:${LANE_COLOR[l]}"></span>${LANE_LABEL[l]}</td><td class="num">${v.trades}</td><td class="num">${v.trades?pctPlain(v.wins/v.trades*100):'—'}</td><td class="num ${cls(v.net)}">${won(v.net)}</td></tr>`;}).join('');
+  const sellRows=Object.entries(o.bySell).sort((a,b)=>b[1].trades-a[1].trades).map(([k,v])=>`<tr><td>${esc(k)}</td><td class="num">${v.trades}</td><td class="num">${v.trades?pctPlain(v.wins/v.trades*100):'—'}</td><td class="num ${cls(v.net)}">${won(v.net)}</td></tr>`).join('');
+  main.insertAdjacentHTML('beforeend',`<div class="grid2">
+    <div class="card"><h2>레인별 (범위 합)</h2><div class="tw"><table><tr><th>레인</th><th class="num">거래</th><th class="num">승률</th><th class="num">순손익</th></tr>${laneRows}</table></div></div>
+    <div class="card"><h2>매도 사유별 (범위 합)</h2><div class="tw"><table><tr><th>사유</th><th class="num">거래</th><th class="num">승률</th><th class="num">순손익</th></tr>${sellRows||'<tr><td colspan="4" class="empty">—</td></tr>'}</table></div></div>
+  </div>`);
+
+  const rows=[...days].reverse().map(d=>{const c=d.counts||{},m=d.money||{}; const bestLane=Object.entries(d.funnel||{}).sort((a,b)=>(b[1].net||0)-(a[1].net||0))[0];
+    return `<tr class="row ${state.day===d.day?'sel':''}" data-day="${d.day}"><td>${ymd(d.day)} <span class="small">${dow(d.day)}</span></td><td class="num">${c.trades||0}</td><td class="num">${c.wins||0} / ${c.losses||0}</td><td class="num">${c.trades?pctPlain((c.wins||0)/c.trades*100):'—'}</td><td class="num ${cls(m.net)}">${won(m.net)}</td><td class="num ${cls(m.worst)}">${m.worst!=null?won(m.worst):'—'}</td><td>${bestLane?`<span class="lane" style="background:${LANE_COLOR[bestLane[0]]}"></span>${esc(bestLane[1].label)} <span class="small ${cls(bestLane[1].net)}">${won(bestLane[1].net)}</span>`:'—'}</td><td class="small">${(d.warnings||[]).length?'⚑ '+(d.warnings||[]).length:''}</td></tr>`;}).join('');
+  main.insertAdjacentHTML('beforeend',`<div class="card"><h2>거래일 목록</h2><div class="tw"><table><tr><th>날짜</th><th class="num">거래</th><th class="num">이익/손실</th><th class="num">승률</th><th class="num">순손익</th><th class="num">최대 손실 거래</th><th>가장 번 레인</th><th>경고</th></tr>${rows}</table></div></div>`);
+  main.querySelectorAll('tr.row').forEach(tr=>tr.onclick=()=>pick({key:tr.dataset.day}));
+}
+
+function renderPeriod(days, main, keyFn, unit){
+  const map=new Map();
+  for(const d of days){ const k=keyFn(d.day); if(!map.has(k)) map.set(k,[]); map.get(k).push(d); }
+  const periods=[...map.entries()].map(([k,ds])=>({key:k,days:ds,o:sum(ds)}));
+  const bars=periods.map(p=>({key:p.key,label:unit==='주'?p.key.slice(5):p.key,value:p.o.net,p}));
+  const c=document.createElement('div'); c.className='card'; c.innerHTML=`<h2>${unit}별 순손익</h2>`;
+  c.appendChild(barChart(bars,{title:unit+'별 순손익',fmtAxis:axisWon,tip:it=>`${it.key} · ${won(it.value)} · ${it.p.o.days}거래일 · ${it.p.o.trades}건`}));
+  c.insertAdjacentHTML('beforeend','<div class="legend"><span><i style="background:var(--gain)"></i>이익</span><span><i style="background:var(--loss)"></i>손실</span></div>');
+  main.appendChild(c);
+  const rows=[...periods].reverse().map(p=>{const o=p.o; const ll=LANE_ORDER.map(l=>{const v=o.byLane[l]; return v?`<span class="chip"><span class="lane" style="background:${LANE_COLOR[l]}"></span>${LANE_LABEL[l].slice(0,2)} <span class="${cls(v.net)}">${won(v.net)}</span></span>`:'';}).join('');
+    return `<tr><td>${unit==='주'?p.key+' 주':p.key}</td><td class="num">${o.days}</td><td class="num">${o.trades}</td><td class="num">${o.wins} / ${o.losses}</td><td class="num">${o.winRate==null?'—':pctPlain(o.winRate)}</td><td class="num ${cls(o.net)}">${won(o.net)}</td><td class="num">${o.days?won(o.net/o.days):'—'}</td><td class="num ${cls(o.worst&&o.worst.net)}">${o.worst?md(o.worst.day)+' '+won(o.worst.net):'—'}</td><td>${ll}</td></tr>`;}).join('');
+  main.insertAdjacentHTML('beforeend',`<div class="card"><h2>${unit}별 표</h2><div class="tw"><table><tr><th>${unit}</th><th class="num">거래일</th><th class="num">거래</th><th class="num">이익/손실</th><th class="num">승률</th><th class="num">순손익</th><th class="num">거래일 평균</th><th class="num">최저 거래일</th><th>레인별</th></tr>${rows}</table></div><div class="small" style="margin-top:6px">${unit}별은 집계본만 합산한다 — 계좌가 다른 날은 위 묶음 선택으로 이미 갈라져 있다.</div></div>`);
+}
+
+// ── 하루 상세 ─────────────────────────────────────────────────────────────────
+function renderDay(d){
+  const box=$('#day');
+  if(!d){ box.innerHTML = state.tab==='daily' ? '<div class="card empty">날짜를 누르면 그날의 거래·깔때기·매도 사유가 여기에 펼쳐진다.</div>' : ''; return; }
+  const c=d.counts||{}, m=d.money||{};
+  const links=[d.links.report?`<a href="${d.links.report}" target="_blank">일간 보고서 ↗</a>`:'', d.links.journal?`<a href="${d.links.journal}" target="_blank">매매일지 ↗</a>`:''].join('');
+  const rules=d.rules||{};
+  const ruleText=`손절 ${pct(rules.stopLossPct,1)} · 본전 ${pct(rules.breakevenArmPct,1)}↑ · 트레일 ${pct(rules.trailArmPct,1)}↑/${pct(rules.trailDropPct,1)} · 비용 왕복 ${pctPlain(d.costPct||0,3)}`;
+  const tiles=[
+    ['순손익',`<span class="${cls(m.net)}">${won(m.net)}</span>`,`이익 ${wonPlain(m.winSum)} · 손실 ${won(m.lossSum)}`],
+    ['완결 거래',`${c.trades||0}건`,`이익 ${c.wins||0} · 손실 ${c.losses||0}`],
+    ['승률',c.trades?pctPlain((c.wins||0)/c.trades*100):'—',''],
+    ['최대 손실 거래',`<span class="${cls(m.worst)}">${won(m.worst)}</span>`,m.worstShareOfLossPct!=null?`손실 합의 ${pctPlain(m.worstShareOfLossPct)}`:''],
+    ['손실 갈래',`<span class="txt">${Object.entries(d.lossKinds||{}).filter(([k,v])=>v).map(([k,v])=>`${k} ${v}`).join(' · ')||'—'}</span>`,''],
+  ];
+  const rows=(d.rows||[]).map((r,i)=>`<tr><td class="num">${i+1}</td><td><span class="lane" style="background:${LANE_COLOR[r.lane]||'var(--muted)'}"></span>${esc(r.name)} <span class="small">${esc(r.code)}</span></td><td>${r.buyAt} → ${r.sellAt}<div class="small">${hold(r.holdSeconds)}</div></td><td class="num">${n(r.buyPrice)} → ${n(r.sellPrice)}<div class="small">${r.quantity}주 · ${wonPlain(r.buyAmount)}</div></td><td class="num ${cls(r.net)}">${won(r.net)}<div class="small">${pct(r.returnPct)}</div></td><td>${esc(r.sellReason||'—')}</td><td class="num">${pct((r.held||{}).hi)} / ${pct((r.held||{}).lo)}</td><td class="num">${pct((r.after||{}).m30)} / ${pct((r.after||{}).m60)}<div class="small">${esc(r.afterMark||'')}</div></td><td class="small">등락 ${pct((r.entry||{}).changeRate)} · 창 ${pct((r.entry||{}).windowReturnPct)} · 강도 ${n((r.entry||{}).contractStrength)} · ${esc((r.entry||{}).marketRegime||'')}</td></tr>`).join('');
+  const funnel=LANE_ORDER.map(l=>{const f=(d.funnel||{})[l]; if(!f) return `<tr><td><span class="lane" style="background:${LANE_COLOR[l]}"></span>${LANE_LABEL[l]}</td><td colspan="7" class="empty">—</td></tr>`;
+    const rej=((d.rejections||{})[l]||[]).slice(0,3).map(([k,v])=>`${esc(k)} ${n(v)}`).join(' · ');
+    return `<tr><td><span class="lane" style="background:${LANE_COLOR[l]}"></span>${esc(f.label)}</td><td class="num">${n(f.evaluated)}</td><td class="num">${n(f.passed)}</td><td class="num">${f.passRatePct==null?'—':f.passRatePct.toFixed(3)+'%'}</td><td class="num">${n(f.passedCodes)}</td><td class="num">${n(f.droppedCapacity)}</td><td class="num ${cls(f.net)}">${won(f.net)}</td><td class="small">${rej}</td></tr>`;}).join('');
+  const sell=Object.entries(d.sellReasons||{}).sort((a,b)=>(b[1].cycles||0)-(a[1].cycles||0)).map(([k,v])=>`<tr><td>${esc(k)}</td><td class="num">${v.cycles}</td><td class="num">${v.winRatePct==null?'—':pctPlain(v.winRatePct)}</td><td class="num ${cls(v.net)}">${won(v.net)}</td><td class="num ${cls(v.netMean)}">${won(v.netMean)}</td></tr>`).join('');
+  const losers=(d.losers||[]).map(l=>`<tr><td><span class="lane" style="background:${LANE_COLOR[l.lane]||'var(--muted)'}"></span>${esc(l.name)} <span class="small">${esc(l.code)}</span></td><td>${esc(l.sellReason||'—')}</td><td>${esc(l.kind||'—')}</td><td class="num loss">${won(l.net)}</td><td class="num">${pct(l.returnPct)}</td><td class="num">${pct(l.hi)} / ${pct(l.lo)}</td><td class="num">${hold(l.holdSeconds)}</td></tr>`).join('');
+  const comp=d.completeness||{};
+  const gaps=(comp.tickGaps||[]).map(g=>`${g[0]}~${g[1]} (${g[2]}초)`).join(', ');
+  box.innerHTML=`<div class="card">
+    <div class="dayhead"><h2>${ymd(d.day)} (${dow(d.day)}) · ${esc(d.person)}</h2><div class="links">${links}</div></div>
+    <div class="small">${ruleText} · 앱 ${esc((d.appVersions||[]).join(', '))} · 집계 ${esc(d.generatedAt||'')} · 계좌 ${esc(d.scope||'')}</div>
+    <div class="tiles" style="margin-top:10px">${tiles.map(([k,v,s])=>`<div class="tile"><div class="k">${k}</div><div class="v">${v}</div><div class="s">${s}</div></div>`).join('')}</div>
+    ${(d.warnings||[]).map(w=>`<div class="warn">⚑ ${esc(w)}</div>`).join('')}
+    <h3 style="margin-top:12px">거래 ${(d.rows||[]).length}건 (시간 순)</h3>
+    <div class="tw"><table><tr><th class="num">#</th><th>종목</th><th>매수 → 매도</th><th class="num">가격 · 수량</th><th class="num">순손익</th><th>사유</th><th class="num">보유 중 최고/최저</th><th class="num">판 뒤 30분/60분</th><th>살 때</th></tr>${rows||'<tr><td colspan="9" class="empty">완결 거래가 없다</td></tr>'}</table></div>
+    <div class="grid2" style="margin-top:12px">
+      <div><h3>손실 거래</h3><div class="tw"><table><tr><th>종목</th><th>사유</th><th>갈래</th><th class="num">순손익</th><th class="num">수익률</th><th class="num">최고/최저</th><th class="num">보유</th></tr>${losers||'<tr><td colspan="7" class="empty">—</td></tr>'}</table></div></div>
+      <div><h3>매도 사유별</h3><div class="tw"><table><tr><th>사유</th><th class="num">건</th><th class="num">승률</th><th class="num">순손익</th><th class="num">건당</th></tr>${sell||'<tr><td colspan="5" class="empty">—</td></tr>'}</table></div></div>
+    </div>
+    <h3 style="margin-top:12px">진입 깔때기 (레인별)</h3>
+    <div class="tw"><table><tr><th>레인</th><th class="num">평가</th><th class="num">통과</th><th class="num">통과율</th><th class="num">통과 종목</th><th class="num">용량 초과</th><th class="num">순손익</th><th>주요 거절 사유</th></tr>${funnel}</table></div>
+    <div class="small" style="margin-top:8px">완결성 — 0B ${n(comp.tickLines)}줄 · ${n(comp.tickCodes)}종목 · ${esc(comp.tickFirst||'')}~${esc(comp.tickLast||'')} · 그림자 ${n(comp.shadowRows)}줄${comp.shadowIncomplete?' · 미완결 '+comp.shadowIncomplete:''}${gaps?' · 틱 공백 '+gaps:''}</div>
+  </div>`;
+}
+
+render();
+}
+
+// ── 웹 판 — 로그인 · 볼 수 있는 사람의 자료 받기 · 관리자 허용 표 ─────────────────
+// SERVER는 report-viewer 함수가 껍데기를 내줄 때 {url, anonKey}로 채운다. 로컬 판은 null이다.
+// 로그인은 앱과 같은 Supabase 계정이다(라이선스 서버). 자료는 함수가 권한을 보고 내준다.
+const SERVER = {"url": "https://pfklheuhfbktoagheurx.supabase.co", "anonKey": "sb_publishable_eSt78PdGdsbVkjF6zKoXeg_qnvggL8g", "fn": "https://pfklheuhfbktoagheurx.supabase.co/functions/v1/report-viewer"};
+function serverMode(){
+  const FN = SERVER.fn || (location.origin + location.pathname);
+  const AUTH_KEY = 'tstudio-viewer-auth';
+  const esc = s => String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+  const loadAuth = () => { try { return JSON.parse(localStorage.getItem(AUTH_KEY)||'null'); } catch(e){ return null; } };
+  const saveAuth = a => { try { a ? localStorage.setItem(AUTH_KEY, JSON.stringify(a)) : localStorage.removeItem(AUTH_KEY); } catch(e){} };
+  const main = document.getElementById('main');
+  async function authApi(grant, body){
+    const r = await fetch(SERVER.url+'/auth/v1/token?grant_type='+grant, {method:'POST', headers:{'content-type':'application/json','apikey':SERVER.anonKey}, body:JSON.stringify(body)});
+    const j = await r.json().catch(()=>({}));
+    if(!r.ok) throw new Error(j.error_description||j.msg||j.message||('HTTP '+r.status));
+    return {access_token:j.access_token, refresh_token:j.refresh_token, expires_at:j.expires_at||Math.floor(Date.now()/1000)+(j.expires_in||3600), email:(j.user||{}).email||body.email||''};
+  }
+  async function session(){
+    let a = loadAuth(); if(!a) return null;
+    if(Date.now()/1000 > (a.expires_at||0) - 60){
+      try { a = await authApi('refresh_token', {refresh_token:a.refresh_token}); saveAuth(a); }
+      catch(e){ saveAuth(null); return null; }
+    }
+    return a;
+  }
+  async function call(action, body){
+    const a = await session(); if(!a) throw Object.assign(new Error('로그인이 필요하다'), {auth:true});
+    const r = await fetch(FN, {method:'POST', headers:{'content-type':'application/json','authorization':'Bearer '+a.access_token,'apikey':SERVER.anonKey}, body:JSON.stringify(Object.assign({action}, body||{}))});
+    const j = await r.json().catch(()=>({}));
+    if(r.status===401){ saveAuth(null); throw Object.assign(new Error(j.message||'로그인이 필요하다'), {auth:true}); }
+    if(!r.ok) throw new Error(j.message||('HTTP '+r.status));
+    return j;
+  }
+  function showLogin(msg){
+    document.getElementById('tiles').innerHTML=''; document.getElementById('day').innerHTML='';
+    document.getElementById('controls').style.display='none';
+    main.innerHTML = `<div class="card" style="max-width:380px;margin:24px auto"><h2>로그인</h2>
+      <div class="small" style="margin-bottom:10px">T-Studio 앱과 같은 이메일·비밀번호</div>
+      <form id="login" autocomplete="on">
+        <input id="email" type="email" name="username" autocomplete="username" placeholder="이메일" required style="width:100%;margin-bottom:8px;font:inherit;padding:7px 9px;border:1px solid var(--border);border-radius:6px;background:var(--surface);color:var(--ink)">
+        <input id="pw" type="password" name="password" autocomplete="current-password" placeholder="비밀번호" required style="width:100%;margin-bottom:10px;font:inherit;padding:7px 9px;border:1px solid var(--border);border-radius:6px;background:var(--surface);color:var(--ink)">
+        <button class="on" type="submit" style="width:100%">들어가기</button>
+      </form><div id="loginmsg" class="small" style="margin-top:8px;min-height:18px">${esc(msg||'')}</div></div>`;
+    const f = document.getElementById('login');
+    f.onsubmit = async e => {
+      e.preventDefault(); const m = document.getElementById('loginmsg'); m.textContent = '확인 중…';
+      try { saveAuth(await authApi('password', {email:document.getElementById('email').value.trim(), password:document.getElementById('pw').value})); await load(); }
+      catch(err){ m.textContent = '로그인 실패 — ' + (err.message||err); }
+    };
+  }
+  function userBar(me){
+    const top = document.querySelector('.top');
+    let bar = document.getElementById('userbar');
+    if(!bar){ bar = document.createElement('div'); bar.id='userbar'; bar.className='bar'; bar.style.margin='0'; top.appendChild(bar); }
+    bar.innerHTML = `<span class="small">${esc(me.email)}${me.isAdmin?' · 관리자':''}</span>${me.isAdmin?'<button id="adminbtn">허용 표…</button>':''}<button id="logout">로그아웃</button>`;
+    document.getElementById('logout').onclick = () => { saveAuth(null); location.reload(); };
+    if(me.isAdmin) document.getElementById('adminbtn').onclick = () => toggleAdmin();
+  }
+  async function toggleAdmin(){
+    let box = document.getElementById('admin');
+    if(box){ box.remove(); return; }
+    box = document.createElement('div'); box.id='admin'; box.className='card';
+    box.innerHTML = '<h2>허용 표 — 누구에게 누구 보고서를 보여주나</h2><div class="small">불러오는 중…</div>';
+    document.getElementById('tiles').before(box);
+    try {
+      const a = await call('admin');
+      const admins = new Set(a.admins||[]);
+      const has = new Set((a.grants||[]).map(g=>g.viewerUserId+'|'+g.ownerUserId));
+      const owners = a.owners||[];
+      if(!owners.length){ box.innerHTML = '<h2>허용 표</h2><div class="empty">아직 올라온 보고서가 없다.</div>'; return; }
+      const head = owners.map(o=>`<th class="num">${esc(o.email)}<div class="small">${esc(o.lastDay||'')}까지 ${o.days}일</div></th>`).join('');
+      const rows = (a.users||[]).map(u=>{
+        const cells = owners.map(o=>{
+          const self = u.userId===o.userId, adm = admins.has(u.userId);
+          const checked = self||adm||has.has(u.userId+'|'+o.userId);
+          return `<td class="num"><input type="checkbox" data-v="${u.userId}" data-o="${o.userId}" ${checked?'checked':''} ${(self||adm)?'disabled':''} title="${self?'자기 것':adm?'관리자는 전부':''}"></td>`; }).join('');
+        return `<tr><td>${esc(u.email)}<span class="small"> · ${esc(u.status)}${admins.has(u.userId)?' · 관리자':''}</span></td>${cells}</tr>`; }).join('');
+      box.innerHTML = `<div class="dayhead"><h2>허용 표 — 행의 사용자에게 열의 보고서를 보여준다</h2><span class="small">자기 것·관리자는 늘 본다 · 체크는 바로 저장된다</span></div>
+        <div class="tw"><table><tr><th>사용자 ↓ · 보고서 주인 →</th>${head}</tr>${rows}</table></div><div id="adminmsg" class="small" style="margin-top:6px;min-height:18px"></div>`;
+      box.querySelectorAll('input[type=checkbox]').forEach(cb => cb.onchange = async () => {
+        const m = document.getElementById('adminmsg'); cb.disabled = true;
+        try { const r = await call('grant', {viewerUserId:cb.dataset.v, ownerUserId:cb.dataset.o, allow:cb.checked}); m.textContent = r.message||''; }
+        catch(err){ cb.checked = !cb.checked; m.textContent = '실패 — ' + (err.message||err); }
+        cb.disabled = false;
+      });
+    } catch(err){ box.innerHTML = '<h2>허용 표</h2><div class="empty">' + esc(err.message||err) + '</div>'; }
+  }
+  async function load(){
+    main.innerHTML = '<div class="card empty">자료를 받는 중…</div>';
+    try {
+      const lst = await call('list');
+      userBar(lst.me);
+      const owners = lst.owners||[];
+      if(!owners.length){ main.innerHTML = '<div class="card empty">볼 수 있는 보고서가 아직 없다. 관리자가 허용하거나 자료가 올라오면 보인다.</div>'; return; }
+      const parts = await Promise.all(owners.map(o => call('data', {ownerUserId:o.userId}).then(r => ({o, d:r.data})).catch(err => ({o, err}))));
+      let base = null; const days = []; const failed = [];
+      for(const p of parts){
+        if(p.err){ failed.push(p.o.email+' — '+(p.err.message||p.err)); continue; }
+        if(!base) base = p.d;
+        for(const d of (p.d.days||[])){ d.person = p.o.email.split('@')[0]; d.links = {report:null, journal:null}; days.push(d); }
+      }
+      if(!base){ main.innerHTML = '<div class="card empty">자료를 받지 못했다 — ' + esc(failed.join(' · ')) + '</div>'; return; }
+      days.sort((a,b)=> a.day<b.day?-1 : a.day>b.day?1 : a.person<b.person?-1:1);
+      const m = document.getElementById('meta'); if(m) m.textContent = m.textContent.replace('(서버 자료)', base.generatedAt||'') + (failed.length?' · 못 받음: '+failed.join(' · '):'');
+      boot(Object.assign({}, base, {days}));
+    } catch(err){
+      if(err.auth) showLogin(err.message==='로그인이 필요하다'?'':err.message); else main.innerHTML = '<div class="card empty">' + esc(err.message||err) + '</div>';
+    }
+  }
+  session().then(a => a ? load() : showLogin(''));
+}
+
+// ── 자료를 어디서 받나 ─────────────────────────────────────────────────────────
+// 심은 JSON이 있으면(자체 포함 판) 그것을, 웹 판(SERVER)이면 로그인 뒤 함수에서, 그도 아니면(껍데기를 로컬 서버로) 옆의 viewer-data.json을 받는다.
+// 화면 코드(boot)는 셋 다 같다.
+(function(){
+  const el=document.getElementById('data'), text=(el&&el.textContent||'').trim();
+  if(text){ boot(JSON.parse(text)); return; }
+  if(SERVER && SERVER.url){ serverMode(); return; }
+  const url=(document.querySelector('meta[name="viewer-data"]')||{}).content||'viewer-data.json';
+  fetch(url,{cache:'no-store'}).then(r=>{ if(!r.ok) throw new Error('HTTP '+r.status); return r.json(); })
+    .then(d=>{ const m=document.getElementById('meta'); if(m) m.textContent=m.textContent.replace('(서버 자료)', d.generatedAt||''); boot(d); })
+    .catch(e=>{ document.getElementById('main').innerHTML='<div class="card empty">자료를 받지 못했다 — '+String(e.message||e).replace(/</g,'&lt;')+'<br>이 껍데기는 서버(또는 localhost)에서 열어야 한다. 파일로 열려면 자체 포함 판 viewer.html을 쓴다.</div>'; });
+})();
+</script>
+</body>
+</html>
