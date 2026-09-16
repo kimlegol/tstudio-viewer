@@ -84,7 +84,7 @@ tr.sel td{background:var(--wash);box-shadow:inset 3px 0 var(--accent)}
     <select id="scope"></select>
     <span class="seg" id="range"></span>
     <span class="seg" id="tab"></span>
-    <label class="small" title="하루에 굴리는 돈(일일매수금액한도). 순손익을 이 금액으로 나눈 수익률을 보여준다">운영자금 <input id="capital" type="text" inputmode="numeric" style="width:110px;text-align:right;font:inherit;color:var(--ink);background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:4px 7px"> 원</label>
+    <label class="small" title="하루에 굴리는 돈(일일매수금액한도). 순손익을 이 금액으로 나눈 수익률을 보여준다. 사용자마다 따로 기억한다">운영자금(사용자별) <input id="capital" type="text" inputmode="numeric" style="width:110px;text-align:right;font:inherit;color:var(--ink);background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:4px 7px"> 원</label>
   </div>
 </div>
 <div id="tiles" class="tiles"></div>
@@ -111,9 +111,25 @@ const dow = d => ['일','월','화','수','목','금','토'][new Date(ymd(d)).ge
 function isoWeekKey(d){ const dt=new Date(ymd(d)+'T00:00:00'); const day=(dt.getDay()+6)%7; dt.setDate(dt.getDate()-day); return dt.getFullYear()+'-'+String(dt.getMonth()+1).padStart(2,'0')+'-'+String(dt.getDate()).padStart(2,'0'); }
 function weekRange(key){ const a=new Date(key+'T00:00:00'); const b=new Date(a); b.setDate(a.getDate()+4); const f=x=>String(x.getMonth()+1).padStart(2,'0')+'-'+String(x.getDate()).padStart(2,'0'); return f(a)+'~'+f(b); }
 // 운영자금 — 하루에 굴리는 돈(일일매수금액한도). 순손익을 이것으로 나눈 것이 «운영자금 대비 %», 그날 실제 매수금 합으로 나눈 것이 «매수금 대비 %».
-const CAPITAL_KEY='tstudio-viewer-capital';
-let CAPITAL = (()=>{ try{ const v=Number(localStorage.getItem(CAPITAL_KEY)); return v>0?v:15000000; }catch(e){ return 15000000; } })();
+// ⚑ 사용자마다 다르다(2026-09-16) — 사람별로 기억한다. 기본 15,000,000원.
+const CAPITAL_KEY='tstudio-viewer-capital-map';
+const CAP_MAP = (()=>{ try{ const m=JSON.parse(localStorage.getItem(CAPITAL_KEY)||'{}'); return (m&&typeof m==='object')?m:{}; }catch(e){ return {}; } })();
+function capitalOf(person){ const v=Number(CAP_MAP[person]); return v>0?v:15000000; }
+function setCapital(person,v){ CAP_MAP[person]=v; try{ localStorage.setItem(CAPITAL_KEY, JSON.stringify(CAP_MAP)); }catch(e){} }
+let CAPITAL = 15000000;   // render()가 고른 묶음의 사람 값으로 매번 다시 채운다
 const pctOf=(net,base)=> base>0 ? net/base*100 : null;
+// 차트 자료(하루별 · 거래 종목 1분 경로 + 지수) — 로컬 자체 포함 판은 심겨 있고, 껍데기·웹 판은 그날을 펼칠 때 받는다.
+let CHART_LOADER = null;   // (day) => Promise<charts|null> · serverMode/로컬 로더가 채운다
+const CHART_CACHE = new Map();
+function chartsFor(d){
+  const key=(d._owner||d.person)+'|'+d.day;
+  if(CHART_CACHE.has(key)) return Promise.resolve(CHART_CACHE.get(key));
+  let p;
+  if(DATA.charts && DATA.charts[d.person+'|'+d.day]) p=Promise.resolve(DATA.charts[d.person+'|'+d.day]);
+  else if(CHART_LOADER) p=CHART_LOADER(d).catch(()=>null);
+  else p=Promise.resolve(null);
+  return p.then(c=>{ CHART_CACHE.set(key,c||null); return c||null; });
+}
 function monthKey(d){ return d.slice(0,4)+'-'+d.slice(4,6); }
 
 // ── 사람·계좌 묶음 ─────────────────────────────────────────────────────────────
@@ -168,8 +184,9 @@ function renderControls(){
   const tabs=[['daily','일별'],['weekly','주별'],['monthly','월별']];
   $('#tab').innerHTML = tabs.map(([k,l])=>`<button data-k="${k}" class="${state.tab===k?'on':''}">${l}</button>`).join('');
   $('#tab').querySelectorAll('button').forEach(b=>b.onclick=()=>{state.tab=b.dataset.k; save(); render();});
-  const cap=$('#capital'); cap.value=Math.round(CAPITAL).toLocaleString('ko-KR');
-  cap.onchange=()=>{ const v=Number(String(cap.value).replace(/[^0-9]/g,'')); if(v>0){ CAPITAL=v; try{ localStorage.setItem(CAPITAL_KEY,String(v)); }catch(e){} } render(); };
+  const g=groups.find(x=>x.key===state.scope); const person=g?g.person:'나';
+  const cap=$('#capital'); cap.value=Math.round(CAPITAL).toLocaleString('ko-KR'); cap.title=`${person}의 운영자금 — 사용자마다 따로 기억한다`;
+  cap.onchange=()=>{ const v=Number(String(cap.value).replace(/[^0-9]/g,'')); if(v>0) setCapital(person,v); render(); };
 }
 
 // ── 타일 ─────────────────────────────────────────────────────────────────────
@@ -250,6 +267,7 @@ const axisWon = v => Math.abs(v)>=10000 ? (v/10000).toFixed(Math.abs(v)>=100000?
 
 // ── 본문 ─────────────────────────────────────────────────────────────────────
 function render(){
+  { const g=groups.find(x=>x.key===state.scope); CAPITAL=capitalOf(g?g.person:'나'); }
   renderControls();
   const days=groupDays();
   renderTiles(days);
@@ -337,12 +355,72 @@ function renderDay(d){
       <div><h3>손실 거래</h3><div class="tw"><table><tr><th>종목</th><th>사유</th><th>갈래</th><th class="num">순손익</th><th class="num">수익률</th><th class="num">최고/최저</th><th class="num">보유</th></tr>${losers||'<tr><td colspan="7" class="empty">—</td></tr>'}</table></div></div>
       <div><h3>매도 사유별</h3><div class="tw"><table><tr><th>사유</th><th class="num">건</th><th class="num">승률</th><th class="num">순손익</th><th class="num">건당</th></tr>${sell||'<tr><td colspan="5" class="empty">—</td></tr>'}</table></div></div>
     </div>
+    <h3 style="margin-top:12px">종목 차트 <span class="small">(1분 · ▲ 매수 ▼ 매도 · 지수는 시가 대비 %)</span></h3>
+    <div id="daycharts" class="grid2"><div class="empty">차트를 받는 중…</div></div>
     <h3 style="margin-top:12px">진입 규칙이 막은 재진입 <span class="small">(같은 날 · 직전 매수가 이하만 · ${(d.reentryBlocks||[]).length}건)</span></h3>
     <div class="tw"><table><tr><th>시각</th><th>종목</th><th class="num">직전 매수가</th><th class="num">신호가</th><th class="num">+30분 / +60분</th><th class="num">이후 최고/최저</th><th>판정</th></tr>${(d.reentryBlocks||[]).map(b=>`<tr><td>${esc(b.kst)}</td><td>${esc(b.name||'')} <span class="small">${esc(b.code)}</span></td><td class="num">${n(b.prevBuy)}</td><td class="num">${n(b.signal)} <span class="small">${pct(b.abovePct)}</span></td><td class="num">${pct((b.after||{}).m30)} / ${pct((b.after||{}).m60)}</td><td class="num">${pct((b.after||{}).hi)} / ${pct((b.after||{}).lo)}</td><td>${esc(b.mark||'')}</td></tr>`).join('')||'<tr><td colspan="7" class="empty">— 막힌 재진입 없음(규칙 도입 전이거나 해당 없음)</td></tr>'}</table></div>
     <h3 style="margin-top:12px">진입 깔때기 (레인별)</h3>
     <div class="tw"><table><tr><th>레인</th><th class="num">평가</th><th class="num">통과</th><th class="num">통과율</th><th class="num">통과 종목</th><th class="num">용량 초과</th><th class="num">순손익</th><th>주요 거절 사유</th></tr>${funnel}</table></div>
     <div class="small" style="margin-top:8px">완결성 — 0B ${n(comp.tickLines)}줄 · ${n(comp.tickCodes)}종목 · ${esc(comp.tickFirst||'')}~${esc(comp.tickLast||'')} · 그림자 ${n(comp.shadowRows)}줄${comp.shadowIncomplete?' · 미완결 '+comp.shadowIncomplete:''}${gaps?' · 틱 공백 '+gaps:''}</div>
   </div>`;
+  renderDayCharts(d);
+}
+
+// ── 종목 차트 — 1분 가격 경로 + 매수▲·매도▼ 표시. 축은 09:00~15:30 고정(날마다 같은 자리에 같은 시간). ──
+const DAY_START=32400, DAY_END=55800;
+const hmsOfSec=s=>`${String(Math.floor(s/3600)).padStart(2,'0')}:${String(Math.floor(s%3600/60)).padStart(2,'0')}`;
+const secOfHms=h=>{ const m=/^(\d\d):(\d\d)(?::(\d\d))?$/.exec(h||''); return m? (+m[1])*3600+(+m[2])*60+(+(m[3]||0)) : null; };
+function priceChart(series, marks, opt){
+  const W=560, H=opt.height||150, L=58, R=10, T=16, B=22, iw=W-L-R, ih=H-T-B;
+  const vals=series.p.filter(v=>v!=null);
+  let mn=Math.min(...vals, ...marks.map(m=>m.p)), mx=Math.max(...vals, ...marks.map(m=>m.p));
+  if(!(mx>mn)){ mx=mn+1; }
+  const pad=(mx-mn)*0.08; mn-=pad; mx+=pad;
+  const x=s=>L+(s-DAY_START)/(DAY_END-DAY_START)*iw, y=v=>T+(mx-v)/(mx-mn)*ih;
+  const base=opt.basePrice; // 기준가(시가) — 수평선
+  let s=`<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(opt.title)}">`;
+  for(const hh of [32400,36000,39600,43200,46800,50400,54000]){ s+=`<line x1="${x(hh)}" x2="${x(hh)}" y1="${T}" y2="${T+ih}" stroke="var(--grid)"/><text x="${x(hh)}" y="${H-6}" text-anchor="middle" font-size="10" fill="var(--muted)">${hmsOfSec(hh)}</text>`; }
+  for(const t of niceTicks(mn,mx,3)) s+=`<line x1="${L}" x2="${W-R}" y1="${y(t)}" y2="${y(t)}" stroke="var(--grid)"/><text x="${L-5}" y="${y(t)+3}" text-anchor="end" font-size="10" fill="var(--muted)">${opt.fmtAxis(t)}</text>`;
+  if(base!=null && base>mn && base<mx) s+=`<line x1="${L}" x2="${W-R}" y1="${y(base)}" y2="${y(base)}" stroke="var(--axis)" stroke-dasharray="3,3"/>`;
+  let d='', pen=false;
+  series.p.forEach((v,i)=>{ if(v==null){ pen=false; return; } const px=x(series.first+i*series.step), py=y(v); d+=(pen?'L':'M')+px.toFixed(1)+','+py.toFixed(1); pen=true; });
+  s+=`<path d="${d}" fill="none" stroke="var(--accent)" stroke-width="1.5" stroke-linejoin="round"/>`;
+  for(const m of marks){ const px=x(m.t), py=y(m.p); const up=m.kind==='buy';
+    s+=`<path d="${up?`M${px},${py-9} L${px-6},${py+1} L${px+6},${py+1} Z`:`M${px},${py+9} L${px-6},${py-1} L${px+6},${py-1} Z`}" fill="${up?'var(--gain)':'var(--loss)'}" stroke="var(--surface)" stroke-width="1"><title>${esc(m.label)}</title></path>`; }
+  s+=`<rect class="hit" x="${L}" y="${T}" width="${iw}" height="${ih}" fill="transparent"/></svg><div class="tip"></div>`;
+  const el=document.createElement('div'); el.className='chart'; el.innerHTML=`<div class="small" style="margin:0 0 2px">${opt.title}</div>`+s;
+  const tip=el.querySelector('.tip'), hit=el.querySelector('.hit'), svg=el.querySelector('svg');
+  hit.addEventListener('mousemove',e=>{ const b=svg.getBoundingClientRect(); const vx=(e.clientX-b.left)/b.width*W; const sec=DAY_START+Math.max(0,Math.min(1,(vx-L)/iw))*(DAY_END-DAY_START); const i=Math.round((sec-series.first)/series.step); const v=series.p[i]; if(v==null){ tip.style.display='none'; return; } tip.style.display='block'; tip.innerHTML=`${hmsOfSec(series.first+i*series.step)} · ${opt.fmtTip(v)}`; const eb=el.getBoundingClientRect(); tip.style.left=(e.clientX-eb.left)+'px'; tip.style.top=(e.clientY-eb.top)+'px'; });
+  hit.addEventListener('mouseleave',()=>tip.style.display='none');
+  return el;
+}
+function renderDayCharts(d){
+  const box=document.getElementById('daycharts'); if(!box) return;
+  chartsFor(d).then(ch=>{
+    if(!document.getElementById('daycharts')) return;   // 그 사이 다른 날로 갔다
+    if(!ch){ box.innerHTML='<div class="empty">이 날의 차트 자료가 없다(자료를 올린 뒤 펼치면 보인다)</div>'; return; }
+    box.innerHTML='';
+    for(const [k,label] of [['KOSPI','코스피'],['KOSDAQ','코스닥']]){
+      const s=(ch.index||{})[k]; if(!s) continue;
+      const first=s.p.find(v=>v!=null); if(first==null) continue;
+      const rel={first:s.first,step:s.step,p:s.p.map(v=>v==null?null:(v/first-1)*100)};
+      const last=[...s.p].reverse().find(v=>v!=null);
+      box.appendChild(priceChart(rel,[],{title:`${label} · 시가 대비 ${pct((last/first-1)*100)}`,basePrice:0,fmtAxis:v=>v.toFixed(1)+'%',fmtTip:v=>pct(v),height:120}));
+    }
+    const codes=[]; for(const r of d.rows||[]) if(!codes.includes(r.code)) codes.push(r.code);
+    for(const code of codes){
+      const s=(ch.symbols||{})[code]; if(!s) continue;
+      const rows=(d.rows||[]).filter(r=>r.code===code); const name=rows[0]?rows[0].name:code;
+      const marks=[];
+      for(const r of rows){ const bt=secOfHms(r.buyAt), st=secOfHms(r.sellAt);
+        if(bt!=null&&r.buyPrice) marks.push({kind:'buy',t:bt,p:r.buyPrice,label:`매수 ${r.buyAt} ${n(r.buyPrice)} · ${r.quantity}주`});
+        if(st!=null&&r.sellPrice) marks.push({kind:'sell',t:st,p:r.sellPrice,label:`매도 ${r.sellAt} ${n(r.sellPrice)} · ${esc(r.sellReason||'')} · ${won(r.net)}`}); }
+      const open=s.p.find(v=>v!=null), last=[...s.p].reverse().find(v=>v!=null);
+      const net=rows.reduce((a,r)=>a+(r.net||0),0);
+      box.appendChild(priceChart(s,marks,{title:`${esc(name)} <span class="small">${esc(code)}</span> · 시가 대비 ${pct((last/open-1)*100)} · <span class="${cls(net)}">${won(net)}</span>`,basePrice:open,fmtAxis:v=>Math.round(v).toLocaleString('ko-KR'),fmtTip:v=>Math.round(v).toLocaleString('ko-KR')+'원'}));
+    }
+    if(!box.children.length) box.innerHTML='<div class="empty">거래한 종목의 차트 자료가 없다</div>';
+  });
 }
 
 render();
@@ -447,11 +525,12 @@ function serverMode(){
       for(const p of parts){
         if(p.err){ failed.push(p.o.email+' — '+(p.err.message||p.err)); continue; }
         if(!base) base = p.d;
-        for(const d of (p.d.days||[])){ d.person = p.o.userId===lst.me.userId ? '나' : p.o.email.split('@')[0]; d.links = {report:null, journal:null}; days.push(d); }
+        for(const d of (p.d.days||[])){ d.person = p.o.userId===lst.me.userId ? '나' : p.o.email.split('@')[0]; d._owner = p.o.userId; d.links = {report:null, journal:null}; days.push(d); }
       }
       if(!base){ main.innerHTML = '<div class="card empty">자료를 받지 못했다 — ' + esc(failed.join(' · ')) + '</div>'; return; }
       days.sort((a,b)=> a.day<b.day?-1 : a.day>b.day?1 : a.person<b.person?-1:1);
       const m = document.getElementById('meta'); if(m) m.textContent = m.textContent.replace('(서버 자료)', base.generatedAt||'') + (failed.length?' · 못 받음: '+failed.join(' · '):'');
+      CHART_LOADER = d => call('charts', {ownerUserId:d._owner, day:d.day}).then(r => r.data || null);
       boot(Object.assign({}, base, {days}));
     } catch(err){
       if(err.auth) showLogin(err.message==='로그인이 필요하다'?'':err.message); else main.innerHTML = '<div class="card empty">' + esc(err.message||err) + '</div>';
@@ -468,6 +547,7 @@ function serverMode(){
   if(text){ boot(JSON.parse(text)); return; }
   if(SERVER && SERVER.url){ serverMode(); return; }
   const url=(document.querySelector('meta[name="viewer-data"]')||{}).content||'viewer-data.json';
+  CHART_LOADER = d => d.chartsFile ? fetch(d.chartsFile,{cache:'no-store'}).then(r=>r.ok?r.json():null) : Promise.resolve(null);
   fetch(url,{cache:'no-store'}).then(r=>{ if(!r.ok) throw new Error('HTTP '+r.status); return r.json(); })
     .then(d=>{ const m=document.getElementById('meta'); if(m) m.textContent=m.textContent.replace('(서버 자료)', d.generatedAt||''); boot(d); })
     .catch(e=>{ document.getElementById('main').innerHTML='<div class="card empty">자료를 받지 못했다 — '+String(e.message||e).replace(/</g,'&lt;')+'<br>이 껍데기는 서버(또는 localhost)에서 열어야 한다. 파일로 열려면 자체 포함 판 viewer.html을 쓴다.</div>'; });
