@@ -84,6 +84,7 @@ tr.sel td{background:var(--wash);box-shadow:inset 3px 0 var(--accent)}
     <select id="scope"></select>
     <span class="seg" id="range"></span>
     <span class="seg" id="tab"></span>
+    <label class="small" title="하루에 굴리는 돈(일일매수금액한도). 순손익을 이 금액으로 나눈 수익률을 보여준다">운영자금 <input id="capital" type="text" inputmode="numeric" style="width:110px;text-align:right;font:inherit;color:var(--ink);background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:4px 7px"> 원</label>
   </div>
 </div>
 <div id="tiles" class="tiles"></div>
@@ -106,7 +107,13 @@ const hold = s => s==null?'—': s>=3600? Math.floor(s/3600)+'시간 '+Math.floo
 const ymd = d => d.slice(0,4)+'-'+d.slice(4,6)+'-'+d.slice(6,8);
 const md = d => d.slice(4,6)+'-'+d.slice(6,8);
 const dow = d => ['일','월','화','수','목','금','토'][new Date(ymd(d)).getDay()];
-function isoWeekKey(d){ const dt=new Date(ymd(d)); const day=(dt.getDay()+6)%7; dt.setDate(dt.getDate()-day); return dt.toISOString().slice(0,10); }
+// 주 = 월~금. 키는 그 주 월요일(yyyy-mm-dd). 휴장일은 집계본이 없으니 저절로 빠지고 남은 거래일만 그 주로 묶인다.
+function isoWeekKey(d){ const dt=new Date(ymd(d)+'T00:00:00'); const day=(dt.getDay()+6)%7; dt.setDate(dt.getDate()-day); return dt.getFullYear()+'-'+String(dt.getMonth()+1).padStart(2,'0')+'-'+String(dt.getDate()).padStart(2,'0'); }
+function weekRange(key){ const a=new Date(key+'T00:00:00'); const b=new Date(a); b.setDate(a.getDate()+4); const f=x=>String(x.getMonth()+1).padStart(2,'0')+'-'+String(x.getDate()).padStart(2,'0'); return f(a)+'~'+f(b); }
+// 운영자금 — 하루에 굴리는 돈(일일매수금액한도). 순손익을 이것으로 나눈 것이 «운영자금 대비 %», 그날 실제 매수금 합으로 나눈 것이 «매수금 대비 %».
+const CAPITAL_KEY='tstudio-viewer-capital';
+let CAPITAL = (()=>{ try{ const v=Number(localStorage.getItem(CAPITAL_KEY)); return v>0?v:15000000; }catch(e){ return 15000000; } })();
+const pctOf=(net,base)=> base>0 ? net/base*100 : null;
 function monthKey(d){ return d.slice(0,4)+'-'+d.slice(4,6); }
 
 // ── 사람·계좌 묶음 ─────────────────────────────────────────────────────────────
@@ -136,11 +143,11 @@ function groupDays(){
   return days;
 }
 function sum(days){
-  const o={trades:0,wins:0,losses:0,flats:0,net:0,cost:0,days:days.length,best:null,worst:null,byLane:{},bySell:{}};
+  const o={trades:0,wins:0,losses:0,flats:0,net:0,cost:0,buy:0,days:days.length,best:null,worst:null,byLane:{},bySell:{}};
   for(const d of days){
     const c=d.counts||{}, m=d.money||{};
     o.trades+=c.trades||0; o.wins+=c.wins||0; o.losses+=c.losses||0; o.flats+=c.flats||0; o.net+=m.net||0;
-    for(const r of d.rows||[]){ o.cost+=r.cost||0; const l=o.byLane[r.lane]||(o.byLane[r.lane]={trades:0,wins:0,net:0}); l.trades++; if((r.net||0)>0) l.wins++; l.net+=r.net||0;
+    for(const r of d.rows||[]){ o.cost+=r.cost||0; o.buy+=r.buyAmount||0; const l=o.byLane[r.lane]||(o.byLane[r.lane]={trades:0,wins:0,net:0}); l.trades++; if((r.net||0)>0) l.wins++; l.net+=r.net||0;
       const s=o.bySell[r.sellReason||'—']||(o.bySell[r.sellReason||'—']={trades:0,wins:0,net:0}); s.trades++; if((r.net||0)>0) s.wins++; s.net+=r.net||0; }
     if(o.best==null||(m.net||0)>o.best.net) o.best={day:d.day,net:m.net||0};
     if(o.worst==null||(m.net||0)<o.worst.net) o.worst={day:d.day,net:m.net||0};
@@ -161,6 +168,8 @@ function renderControls(){
   const tabs=[['daily','일별'],['weekly','주별'],['monthly','월별']];
   $('#tab').innerHTML = tabs.map(([k,l])=>`<button data-k="${k}" class="${state.tab===k?'on':''}">${l}</button>`).join('');
   $('#tab').querySelectorAll('button').forEach(b=>b.onclick=()=>{state.tab=b.dataset.k; save(); render();});
+  const cap=$('#capital'); cap.value=Math.round(CAPITAL).toLocaleString('ko-KR');
+  cap.onchange=()=>{ const v=Number(String(cap.value).replace(/[^0-9]/g,'')); if(v>0){ CAPITAL=v; try{ localStorage.setItem(CAPITAL_KEY,String(v)); }catch(e){} } render(); };
 }
 
 // ── 타일 ─────────────────────────────────────────────────────────────────────
@@ -168,7 +177,9 @@ function renderTiles(days){
   const o=sum(days);
   const tiles=[
     ['순손익 합', `<span class="${cls(o.net)}">${won(o.net)}</span>`, `${o.days}거래일 · 비용 ${wonPlain(o.cost)}`],
-    ['거래일 평균', `<span class="${cls(o.net)}">${o.days?won(o.net/o.days):'—'}</span>`, o.best?`최고 ${md(o.best.day)} ${won(o.best.net)}`:''],
+    ['운영자금 대비', `<span class="${cls(o.net)}">${pct(pctOf(o.net,CAPITAL))}</span>`, `운영자금 ${wonPlain(CAPITAL)} 기준`],
+    ['매수금 대비', `<span class="${cls(o.net)}">${pct(pctOf(o.net,o.buy))}</span>`, `매수금 합 ${wonPlain(o.buy)}`],
+    ['거래일 평균', `<span class="${cls(o.net)}">${o.days?won(o.net/o.days):'—'}</span>`, o.days?`운영자금 대비 ${pct(pctOf(o.net/o.days,CAPITAL))}/일`:''],
     ['완결 거래', n(o.trades)+'건', `이익 ${o.wins} · 손실 ${o.losses}${o.flats?' · 무 '+o.flats:''}`],
     ['승률', o.winRate==null?'—':pctPlain(o.winRate), `거래 ${o.trades}건 기준`],
     ['최저 거래일', o.worst?`<span class="${cls(o.worst.net)}">${won(o.worst.net)}</span>`:'—', o.worst?md(o.worst.day)+' ('+dow(o.worst.day)+')':''],
@@ -255,7 +266,7 @@ function renderDaily(days, main){
   const bars=days.map(d=>({key:d.day,label:md(d.day),value:(d.money||{}).net||0,d}));
   let acc=0; const cum=days.map(d=>({key:d.day,label:md(d.day),value:(acc+=((d.money||{}).net||0)),d}));
   const c1=document.createElement('div'); c1.className='card'; c1.innerHTML='<h2>날짜별 순손익</h2>';
-  c1.appendChild(barChart(bars,{title:'날짜별 순손익',fmtAxis:axisWon,onPick:pick,tip:it=>`${ymd(it.key)} (${dow(it.key)}) · ${won(it.value)} · ${(it.d.counts||{}).trades||0}건`}));
+  c1.appendChild(barChart(bars,{title:'날짜별 순손익',fmtAxis:axisWon,onPick:pick,tip:it=>`${ymd(it.key)} (${dow(it.key)}) · ${won(it.value)} · 운영자금 대비 ${pct(pctOf(it.value,CAPITAL))} · ${(it.d.counts||{}).trades||0}건`}));
   c1.insertAdjacentHTML('beforeend','<div class="legend"><span><i style="background:var(--gain)"></i>이익</span><span><i style="background:var(--loss)"></i>손실</span><span class="small">막대를 누르면 그날로 내려간다</span></div>');
   const c2=document.createElement('div'); c2.className='card'; c2.innerHTML='<h2>누적 순손익</h2>';
   c2.appendChild(lineChart(cum,{title:'누적 순손익',fmtAxis:axisWon,onPick:pick,tip:it=>`${ymd(it.key)}까지 누적 ${won(it.value)}`}));
@@ -269,9 +280,9 @@ function renderDaily(days, main){
     <div class="card"><h2>매도 사유별 (범위 합)</h2><div class="tw"><table><tr><th>사유</th><th class="num">거래</th><th class="num">승률</th><th class="num">순손익</th></tr>${sellRows||'<tr><td colspan="4" class="empty">—</td></tr>'}</table></div></div>
   </div>`);
 
-  const rows=[...days].reverse().map(d=>{const c=d.counts||{},m=d.money||{}; const bestLane=Object.entries(d.funnel||{}).sort((a,b)=>(b[1].net||0)-(a[1].net||0))[0];
-    return `<tr class="row ${state.day===d.day?'sel':''}" data-day="${d.day}"><td>${ymd(d.day)} <span class="small">${dow(d.day)}</span></td><td class="num">${c.trades||0}</td><td class="num">${c.wins||0} / ${c.losses||0}</td><td class="num">${c.trades?pctPlain((c.wins||0)/c.trades*100):'—'}</td><td class="num ${cls(m.net)}">${won(m.net)}</td><td class="num ${cls(m.worst)}">${m.worst!=null?won(m.worst):'—'}</td><td>${bestLane?`<span class="lane" style="background:${LANE_COLOR[bestLane[0]]}"></span>${esc(bestLane[1].label)} <span class="small ${cls(bestLane[1].net)}">${won(bestLane[1].net)}</span>`:'—'}</td><td class="small">${(d.warnings||[]).length?'⚑ '+(d.warnings||[]).length:''}</td></tr>`;}).join('');
-  main.insertAdjacentHTML('beforeend',`<div class="card"><h2>거래일 목록</h2><div class="tw"><table><tr><th>날짜</th><th class="num">거래</th><th class="num">이익/손실</th><th class="num">승률</th><th class="num">순손익</th><th class="num">최대 손실 거래</th><th>가장 번 레인</th><th>경고</th></tr>${rows}</table></div></div>`);
+  const rows=[...days].reverse().map(d=>{const c=d.counts||{},m=d.money||{}; const buy=(d.rows||[]).reduce((s,r)=>s+(r.buyAmount||0),0); const bestLane=Object.entries(d.funnel||{}).sort((a,b)=>(b[1].net||0)-(a[1].net||0))[0];
+    return `<tr class="row ${state.day===d.day?'sel':''}" data-day="${d.day}"><td>${ymd(d.day)} <span class="small">${dow(d.day)}</span></td><td class="num">${c.trades||0}</td><td class="num">${c.wins||0} / ${c.losses||0}</td><td class="num">${c.trades?pctPlain((c.wins||0)/c.trades*100):'—'}</td><td class="num ${cls(m.net)}">${won(m.net)}</td><td class="num ${cls(m.net)}">${pct(pctOf(m.net||0,CAPITAL))}</td><td class="num">${wonPlain(buy)}<div class="small ${cls(m.net)}">${pct(pctOf(m.net||0,buy))}</div></td><td class="num ${cls(m.worst)}">${m.worst!=null?won(m.worst):'—'}</td><td>${bestLane?`<span class="lane" style="background:${LANE_COLOR[bestLane[0]]}"></span>${esc(bestLane[1].label)} <span class="small ${cls(bestLane[1].net)}">${won(bestLane[1].net)}</span>`:'—'}</td><td class="small">${(d.warnings||[]).length?'⚑ '+(d.warnings||[]).length:''}</td></tr>`;}).join('');
+  main.insertAdjacentHTML('beforeend',`<div class="card"><h2>거래일 목록</h2><div class="tw"><table><tr><th>날짜</th><th class="num">거래</th><th class="num">이익/손실</th><th class="num">승률</th><th class="num">순손익</th><th class="num">운영자금 대비</th><th class="num">매수금액 · 매수금 대비</th><th class="num">최대 손실 거래</th><th>가장 번 레인</th><th>경고</th></tr>${rows}</table></div></div>`);
   main.querySelectorAll('tr.row').forEach(tr=>tr.onclick=()=>pick({key:tr.dataset.day}));
 }
 
@@ -279,14 +290,15 @@ function renderPeriod(days, main, keyFn, unit){
   const map=new Map();
   for(const d of days){ const k=keyFn(d.day); if(!map.has(k)) map.set(k,[]); map.get(k).push(d); }
   const periods=[...map.entries()].map(([k,ds])=>({key:k,days:ds,o:sum(ds)}));
-  const bars=periods.map(p=>({key:p.key,label:unit==='주'?p.key.slice(5):p.key,value:p.o.net,p}));
-  const c=document.createElement('div'); c.className='card'; c.innerHTML=`<h2>${unit}별 순손익</h2>`;
-  c.appendChild(barChart(bars,{title:unit+'별 순손익',fmtAxis:axisWon,tip:it=>`${it.key} · ${won(it.value)} · ${it.p.o.days}거래일 · ${it.p.o.trades}건`}));
+  const label=k=> unit==='주' ? weekRange(k) : k;
+  const bars=periods.map(p=>({key:p.key,label:label(p.key),value:p.o.net,p}));
+  const c=document.createElement('div'); c.className='card'; c.innerHTML=`<h2>${unit}별 순손익${unit==='주'?' <span class="small">(월~금 · 휴장일은 빠진다)</span>':''}</h2>`;
+  c.appendChild(barChart(bars,{title:unit+'별 순손익',fmtAxis:axisWon,tip:it=>`${label(it.key)} · ${won(it.value)} · 운영자금 대비 ${pct(pctOf(it.value,CAPITAL))} · ${it.p.o.days}거래일 · ${it.p.o.trades}건`}));
   c.insertAdjacentHTML('beforeend','<div class="legend"><span><i style="background:var(--gain)"></i>이익</span><span><i style="background:var(--loss)"></i>손실</span></div>');
   main.appendChild(c);
   const rows=[...periods].reverse().map(p=>{const o=p.o; const ll=LANE_ORDER.map(l=>{const v=o.byLane[l]; return v?`<span class="chip"><span class="lane" style="background:${LANE_COLOR[l]}"></span>${LANE_LABEL[l].slice(0,2)} <span class="${cls(v.net)}">${won(v.net)}</span></span>`:'';}).join('');
-    return `<tr><td>${unit==='주'?p.key+' 주':p.key}</td><td class="num">${o.days}</td><td class="num">${o.trades}</td><td class="num">${o.wins} / ${o.losses}</td><td class="num">${o.winRate==null?'—':pctPlain(o.winRate)}</td><td class="num ${cls(o.net)}">${won(o.net)}</td><td class="num">${o.days?won(o.net/o.days):'—'}</td><td class="num ${cls(o.worst&&o.worst.net)}">${o.worst?md(o.worst.day)+' '+won(o.worst.net):'—'}</td><td>${ll}</td></tr>`;}).join('');
-  main.insertAdjacentHTML('beforeend',`<div class="card"><h2>${unit}별 표</h2><div class="tw"><table><tr><th>${unit}</th><th class="num">거래일</th><th class="num">거래</th><th class="num">이익/손실</th><th class="num">승률</th><th class="num">순손익</th><th class="num">거래일 평균</th><th class="num">최저 거래일</th><th>레인별</th></tr>${rows}</table></div><div class="small" style="margin-top:6px">${unit}별은 집계본만 합산한다 — 계좌가 다른 날은 위 묶음 선택으로 이미 갈라져 있다.</div></div>`);
+    return `<tr><td style="white-space:nowrap">${unit==='주'?weekRange(p.key)+' <span class="small">주</span>':p.key}</td><td class="num">${o.days}</td><td class="num">${o.trades}</td><td class="num">${o.wins} / ${o.losses}</td><td class="num">${o.winRate==null?'—':pctPlain(o.winRate)}</td><td class="num ${cls(o.net)}">${won(o.net)}</td><td class="num ${cls(o.net)}">${pct(pctOf(o.net,CAPITAL))}</td><td class="num">${wonPlain(o.buy)}<div class="small ${cls(o.net)}">${pct(pctOf(o.net,o.buy))}</div></td><td class="num">${o.days?won(o.net/o.days):'—'}</td><td class="num ${cls(o.worst&&o.worst.net)}">${o.worst?md(o.worst.day)+' '+won(o.worst.net):'—'}</td><td>${ll}</td></tr>`;}).join('');
+  main.insertAdjacentHTML('beforeend',`<div class="card"><h2>${unit}별 표</h2><div class="tw"><table><tr><th>${unit}</th><th class="num">거래일</th><th class="num">거래</th><th class="num">이익/손실</th><th class="num">승률</th><th class="num">순손익</th><th class="num">운영자금 대비</th><th class="num">매수금액 · 매수금 대비</th><th class="num">거래일 평균</th><th class="num">최저 거래일</th><th>레인별</th></tr>${rows}</table></div><div class="small" style="margin-top:6px">${unit}별은 집계본만 합산한다 — 계좌가 다른 날은 위 묶음 선택으로 이미 갈라져 있다.</div></div>`);
 }
 
 // ── 하루 상세 ─────────────────────────────────────────────────────────────────
@@ -299,6 +311,8 @@ function renderDay(d){
   const ruleText=`손절 ${pct(rules.stopLossPct,1)} · 본전 ${pct(rules.breakevenArmPct,1)}↑ · 트레일 ${pct(rules.trailArmPct,1)}↑/${pct(rules.trailDropPct,1)} · 비용 왕복 ${pctPlain(d.costPct||0,3)}`;
   const tiles=[
     ['순손익',`<span class="${cls(m.net)}">${won(m.net)}</span>`,`이익 ${wonPlain(m.winSum)} · 손실 ${won(m.lossSum)}`],
+    ['운영자금 대비',`<span class="${cls(m.net)}">${pct(pctOf(m.net||0,CAPITAL))}</span>`,`운영자금 ${wonPlain(CAPITAL)}`],
+    ['매수금 대비',`<span class="${cls(m.net)}">${pct(pctOf(m.net||0,(d.rows||[]).reduce((s,r)=>s+(r.buyAmount||0),0)))}</span>`,`매수금 합 ${wonPlain((d.rows||[]).reduce((s,r)=>s+(r.buyAmount||0),0))}`],
     ['완결 거래',`${c.trades||0}건`,`이익 ${c.wins||0} · 손실 ${c.losses||0}`],
     ['승률',c.trades?pctPlain((c.wins||0)/c.trades*100):'—',''],
     ['최대 손실 거래',`<span class="${cls(m.worst)}">${won(m.worst)}</span>`,m.worstShareOfLossPct!=null?`손실 합의 ${pctPlain(m.worstShareOfLossPct)}`:''],
