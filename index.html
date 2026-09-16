@@ -46,6 +46,7 @@ button:hover:not(.on){background:var(--wash)}
 .seg button:last-child{border-right:0}
 .card{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:12px 14px;margin-bottom:12px}
 .tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px;margin-bottom:12px}
+.tiles.cmp-a .tile{border-left:3px solid var(--lane1)} .tiles.cmp-b .tile{border-left:3px solid var(--lane2)}
 .tile{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:10px 12px}
 .tile .k{font-size:12px;color:var(--muted)}
 .tile .v{font-size:22px;font-weight:700;line-height:1.2;margin-top:2px}
@@ -175,11 +176,11 @@ function daysOfGroup(key){
 }
 function groupDays(){ return daysOfGroup(state.scope); }
 function sum(days){
-  const o={trades:0,wins:0,losses:0,flats:0,net:0,cost:0,buy:0,days:days.length,best:null,worst:null,byLane:{},bySell:{}};
+  const o={trades:0,wins:0,losses:0,flats:0,net:0,cost:0,buy:0,winSum:0,lossSum:0,days:days.length,best:null,worst:null,byLane:{},bySell:{}};
   for(const d of days){
     const c=d.counts||{}, m=d.money||{};
     o.trades+=c.trades||0; o.wins+=c.wins||0; o.losses+=c.losses||0; o.flats+=c.flats||0; o.net+=m.net||0;
-    for(const r of d.rows||[]){ o.cost+=r.cost||0; o.buy+=r.buyAmount||0; const l=o.byLane[r.lane]||(o.byLane[r.lane]={trades:0,wins:0,net:0}); l.trades++; if((r.net||0)>0) l.wins++; l.net+=r.net||0;
+    for(const r of d.rows||[]){ o.cost+=r.cost||0; o.buy+=r.buyAmount||0; if((r.net||0)>0) o.winSum+=r.net; else if((r.net||0)<0) o.lossSum+=r.net; const l=o.byLane[r.lane]||(o.byLane[r.lane]={trades:0,wins:0,net:0}); l.trades++; if((r.net||0)>0) l.wins++; l.net+=r.net||0;
       const s=o.bySell[r.sellReason||'—']||(o.bySell[r.sellReason||'—']={trades:0,wins:0,net:0}); s.trades++; if((r.net||0)>0) s.wins++; s.net+=r.net||0; }
     if(o.best==null||(m.net||0)>o.best.net) o.best={day:d.day,net:m.net||0};
     if(o.worst==null||(m.net||0)<o.worst.net) o.worst={day:d.day,net:m.net||0};
@@ -212,18 +213,22 @@ function renderControls(){
 }
 
 // ── 타일 ─────────────────────────────────────────────────────────────────────
-function renderTiles(days){
-  const o=sum(days);
-  const tiles=[
+// 타일 한 벌 — 위 요약과 비교 탭이 같은 벌을 쓴다(비교 탭은 사람마다 한 줄 · 2026-09-16 사용자 요청 「순손익 합부터 최저 거래일까지 각 사용자의 값」).
+function tileSet(o, cap){
+  return [
     ['순손익 합', `<span class="${cls(o.net)}">${won(o.net)}</span>`, `${o.days}거래일 · 비용 ${wonPlain(o.cost)}`],
-    ['운영자금 대비', `<span class="${cls(o.net)}">${pct(pctOf(o.net,CAPITAL))}</span>`, `운영자금 ${wonPlain(CAPITAL)} 기준`],
+    ['운영자금 대비', `<span class="${cls(o.net)}">${pct(pctOf(o.net,cap))}</span>`, `운영자금 ${wonPlain(cap)} 기준`],
     ['매수금 대비', `<span class="${cls(o.net)}">${pct(pctOf(o.net,o.buy))}</span>`, `매수금 합 ${wonPlain(o.buy)}`],
-    ['거래일 평균', `<span class="${cls(o.net)}">${o.days?won(o.net/o.days):'—'}</span>`, o.days?`운영자금 대비 ${pct(pctOf(o.net/o.days,CAPITAL))}/일`:''],
+    ['거래일 평균', `<span class="${cls(o.net)}">${o.days?won(o.net/o.days):'—'}</span>`, o.days?`운영자금 대비 ${pct(pctOf(o.net/o.days,cap))}/일`:''],
     ['완결 거래', n(o.trades)+'건', `이익 ${o.wins} · 손실 ${o.losses}${o.flats?' · 무 '+o.flats:''}`],
     ['승률', o.winRate==null?'—':pctPlain(o.winRate), `거래 ${o.trades}건 기준`],
+    ['건당 평균', `<span class="${cls(o.net)}">${o.trades?won(o.net/o.trades):'—'}</span>`, o.trades?`이익 건 평균 ${o.wins?won(o.winSum/o.wins):'—'} · 손실 건 평균 ${o.losses?won(o.lossSum/o.losses):'—'}`:''],
     ['최저 거래일', o.worst?`<span class="${cls(o.worst.net)}">${won(o.worst.net)}</span>`:'—', o.worst?md(o.worst.day)+' ('+dow(o.worst.day)+')':''],
   ];
-  $('#tiles').innerHTML = tiles.map(([k,v,s])=>`<div class="tile"><div class="k">${k}</div><div class="v">${v}</div><div class="s">${s}</div></div>`).join('');
+}
+const tilesHtml = tiles => tiles.map(([k,v,s])=>`<div class="tile"><div class="k">${k}</div><div class="v">${v}</div><div class="s">${s}</div></div>`).join('');
+function renderTiles(days){
+  $('#tiles').innerHTML = tilesHtml(tileSet(sum(days), CAPITAL));
 }
 
 // ── 차트 ─────────────────────────────────────────────────────────────────────
@@ -377,18 +382,15 @@ function renderCompare(main){
   const dates=[...new Set([...byA.keys(),...byB.keys()])].sort();
   const sA=sum(dA), sB=sum(dB);
   const pick=`<label class="small">B <select id="cmpsel">${others.map(g=>`<option value="${esc(g.key)}"${g.key===state.cmp?' selected':''}>${esc(nameOf(g))} · ${g.days.length}일</option>`).join('')}</select></label>`;
-  const tile=(k,va,vb,ca,cb)=>`<tr><th>${k}</th><td class="num ${ca||''}">${va}</td><td class="num ${cb||''}">${vb}</td></tr>`;
+  const diffPct=(a,b)=> (a==null||b==null) ? '—' : `<span class="${cls(a-b)}">${(a-b>0?'+':a-b<0?'−':'')+Math.abs(a-b).toFixed(2)}%p</span>`;
   const head=`<div class="card"><div class="dayhead"><h2>비교 — <span style="color:${CMP_A}">A ${esc(nameOf(A))}</span> vs <span style="color:${CMP_B}">B ${esc(nameOf(B))}</span></h2>${pick}</div>
     <div class="small">A는 위 선택 상자의 묶음, B는 여기서 고른다. 같은 범위(${{all:'전체','30':'최근 30일','7':'최근 7일',month:'이달'}[state.range]})를 두 사람에게 같이 건다. 두 사람은 조건식 원문도 설정도 다르므로 «무엇 때문에»를 하나로 지목하지 않는다 — 같은 날 같은 종목의 첫 진입만 짝지어 본다.</div>
-    <div class="tw" style="margin-top:8px"><table class="narrow"><tr><th></th><th class="num" style="color:${CMP_A}">A</th><th class="num" style="color:${CMP_B}">B</th></tr>
-      ${tile('거래일',sA.days,sB.days)}
-      ${tile('순손익 합',won(sA.net),won(sB.net),cls(sA.net),cls(sB.net))}
-      ${tile('운영자금 대비',pct(pctOf(sA.net,capA))+` <span class="small">(${wonPlain(capA)})</span>`,pct(pctOf(sB.net,capB))+` <span class="small">(${wonPlain(capB)})</span>`,cls(sA.net),cls(sB.net))}
-      ${tile('매수금 대비',pct(pctOf(sA.net,sA.buy)),pct(pctOf(sB.net,sB.buy)),cls(sA.net),cls(sB.net))}
-      ${tile('완결 거래',sA.trades+'건 · 이익 '+sA.wins+' · 손실 '+sA.losses,sB.trades+'건 · 이익 '+sB.wins+' · 손실 '+sB.losses)}
-      ${tile('승률',sA.winRate==null?'—':pctPlain(sA.winRate),sB.winRate==null?'—':pctPlain(sB.winRate))}
-      ${tile('거래일 평균',sA.days?won(sA.net/sA.days):'—',sB.days?won(sB.net/sB.days):'—',cls(sA.net),cls(sB.net))}
-      ${tile('건당 평균',sA.trades?won(sA.net/sA.trades):'—',sB.trades?won(sB.net/sB.trades):'—',cls(sA.net),cls(sB.net))}
+    <div class="cmphead" style="margin-top:10px;color:${CMP_A}"><b>A · ${esc(nameOf(A))}</b> <span class="small">${sA.days}거래일</span></div>
+    <div class="tiles cmp-a">${tilesHtml(tileSet(sA, capA))}</div>
+    <div class="cmphead" style="margin-top:10px;color:${CMP_B}"><b>B · ${esc(nameOf(B))}</b> <span class="small">${sB.days}거래일</span></div>
+    <div class="tiles cmp-b">${tilesHtml(tileSet(sB, capB))}</div>
+    <div class="tw" style="margin-top:10px"><table class="narrow"><tr><th>차이 (A − B)</th><th class="num">순손익</th><th class="num">운영자금 대비</th><th class="num">매수금 대비</th><th class="num">승률</th><th class="num">거래일 평균</th><th class="num">건당 평균</th></tr>
+      <tr><td class="small">같은 범위 · 각자 운영자금</td><td class="num ${cls(sA.net-sB.net)}">${won(sA.net-sB.net)}</td><td class="num">${diffPct(pctOf(sA.net,capA),pctOf(sB.net,capB))}</td><td class="num">${diffPct(pctOf(sA.net,sA.buy),pctOf(sB.net,sB.buy))}</td><td class="num">${diffPct(sA.winRate,sB.winRate)}</td><td class="num ${cls((sA.days?sA.net/sA.days:0)-(sB.days?sB.net/sB.days:0))}">${sA.days&&sB.days?won(sA.net/sA.days-sB.net/sB.days):'—'}</td><td class="num ${cls((sA.trades?sA.net/sA.trades:0)-(sB.trades?sB.net/sB.trades:0))}">${sA.trades&&sB.trades?won(sA.net/sA.trades-sB.net/sB.trades):'—'}</td></tr>
     </table></div></div>`;
   main.innerHTML=head;
   document.getElementById('cmpsel').onchange=e=>{ state.cmp=e.target.value; save(); render(); };
