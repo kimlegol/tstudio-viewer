@@ -75,6 +75,13 @@ tr.sel td{background:var(--wash);box-shadow:inset 3px 0 var(--accent)}
 .small{font-size:12px;color:var(--muted)}
 .empty{color:var(--muted);padding:12px 0}
 .dayhead{display:flex;flex-wrap:wrap;gap:8px 16px;align-items:baseline;justify-content:space-between}
+.tcard{display:grid;grid-template-columns:minmax(230px,1fr) minmax(280px,1.5fr);gap:6px 14px;padding:10px 0;border-bottom:1px solid var(--grid);align-items:start}
+.tcard:last-child{border-bottom:0}
+.tinfo{font-size:13px;line-height:1.45}
+.tinfo .row{display:flex;gap:10px;flex-wrap:wrap}
+.tinfo .k{color:var(--muted);min-width:64px;display:inline-block}
+.tinfo .big{font-size:16px;font-weight:700}
+@media (max-width:760px){.tcard{grid-template-columns:1fr}}
 </style>
 </head>
 <body>
@@ -336,7 +343,16 @@ function renderDay(d){
     ['최대 손실 거래',`<span class="${cls(m.worst)}">${won(m.worst)}</span>`,m.worstShareOfLossPct!=null?`손실 합의 ${pctPlain(m.worstShareOfLossPct)}`:''],
     ['손실 갈래',`<span class="txt">${Object.entries(d.lossKinds||{}).filter(([k,v])=>v).map(([k,v])=>`${k} ${v}`).join(' · ')||'—'}</span>`,''],
   ];
-  const rows=(d.rows||[]).map((r,i)=>`<tr><td class="num">${i+1}</td><td><span class="lane" style="background:${LANE_COLOR[r.lane]||'var(--muted)'}"></span>${esc(r.name)} <span class="small">${esc(r.code)}</span></td><td>${r.buyAt} → ${r.sellAt}<div class="small">${hold(r.holdSeconds)}</div></td><td class="num">${n(r.buyPrice)} → ${n(r.sellPrice)}<div class="small">${r.quantity}주 · ${wonPlain(r.buyAmount)}</div></td><td class="num ${cls(r.net)}">${won(r.net)}<div class="small">${pct(r.returnPct)}</div></td><td>${esc(r.sellReason||'—')}</td><td class="num">${pct((r.held||{}).hi)} / ${pct((r.held||{}).lo)}</td><td class="num">${pct((r.after||{}).m30)} / ${pct((r.after||{}).m60)}<div class="small">${esc(r.afterMark||'')}</div></td><td class="small">등락 ${pct((r.entry||{}).changeRate)} · 창 ${pct((r.entry||{}).windowReturnPct)} · 강도 ${n((r.entry||{}).contractStrength)} · ${esc((r.entry||{}).marketRegime||'')}</td></tr>`).join('');
+  // 거래 한 건 = 카드 하나(왼쪽 매매 정보 · 오른쪽 그 종목 차트에 이 거래의 ▲▼를 굵게, 같은 종목 다른 거래는 흐리게). 차트는 renderDayCharts가 채운다.
+  const rows=(d.rows||[]).map((r,i)=>`<div class="tcard"><div class="tinfo">
+      <div class="row"><span><b>#${i+1}</b> <span class="lane" style="background:${LANE_COLOR[r.lane]||'var(--muted)'}"></span>${esc(r.name)} <span class="small">${esc(r.code)} · ${esc(LANE_LABEL[r.lane]||r.lane||'')}</span></span></div>
+      <div class="row"><span class="big ${cls(r.net)}">${won(r.net)}</span><span class="${cls(r.net)}" style="align-self:end">${pct(r.returnPct)}</span><span class="small" style="align-self:end">${esc(r.sellReason||'—')}</span></div>
+      <div><span class="k">매수</span>${r.buyAt} · ${n(r.buyPrice)}원 · ${r.quantity}주 · ${wonPlain(r.buyAmount)}</div>
+      <div><span class="k">매도</span>${r.sellAt} · ${n(r.sellPrice)}원 · 보유 ${hold(r.holdSeconds)}</div>
+      <div><span class="k">보유 중</span>최고 ${pct((r.held||{}).hi)} · 최저 ${pct((r.held||{}).lo)}</div>
+      <div><span class="k">판 뒤</span>+30분 ${pct((r.after||{}).m30)} · +60분 ${pct((r.after||{}).m60)} · <b>${esc(r.afterMark||'')}</b></div>
+      <div class="small"><span class="k">살 때</span>등락 ${pct((r.entry||{}).changeRate)} · 창 ${pct((r.entry||{}).windowReturnPct)} · 반등 ${pct((r.entry||{}).bounceFromLowPct)} · 강도 ${n((r.entry||{}).contractStrength)} · ${esc((r.entry||{}).marketRegime||'')}</div>
+    </div><div class="tchart" data-i="${i}"><div class="small empty">차트를 받는 중…</div></div></div>`).join('');
   const funnel=LANE_ORDER.map(l=>{const f=(d.funnel||{})[l]; if(!f) return `<tr><td><span class="lane" style="background:${LANE_COLOR[l]}"></span>${LANE_LABEL[l]}</td><td colspan="7" class="empty">—</td></tr>`;
     const rej=((d.rejections||{})[l]||[]).slice(0,3).map(([k,v])=>`${esc(k)} ${n(v)}`).join(' · ');
     return `<tr><td><span class="lane" style="background:${LANE_COLOR[l]}"></span>${esc(f.label)}</td><td class="num">${n(f.evaluated)}</td><td class="num">${n(f.passed)}</td><td class="num">${f.passRatePct==null?'—':f.passRatePct.toFixed(3)+'%'}</td><td class="num">${n(f.passedCodes)}</td><td class="num">${n(f.droppedCapacity)}</td><td class="num ${cls(f.net)}">${won(f.net)}</td><td class="small">${rej}</td></tr>`;}).join('');
@@ -349,14 +365,14 @@ function renderDay(d){
     <div class="small">${ruleText} · 앱 ${esc((d.appVersions||[]).join(', '))} · 집계 ${esc(d.generatedAt||'')} · 계좌 ${esc(d.scope||'')}</div>
     <div class="tiles" style="margin-top:10px">${tiles.map(([k,v,s])=>`<div class="tile"><div class="k">${k}</div><div class="v">${v}</div><div class="s">${s}</div></div>`).join('')}</div>
     ${(d.warnings||[]).map(w=>`<div class="warn">⚑ ${esc(w)}</div>`).join('')}
-    <h3 style="margin-top:12px">거래 ${(d.rows||[]).length}건 (시간 순)</h3>
-    <div class="tw"><table><tr><th class="num">#</th><th>종목</th><th>매수 → 매도</th><th class="num">가격 · 수량</th><th class="num">순손익</th><th>사유</th><th class="num">보유 중 최고/최저</th><th class="num">판 뒤 30분/60분</th><th>살 때</th></tr>${rows||'<tr><td colspan="9" class="empty">완결 거래가 없다</td></tr>'}</table></div>
+    <h3 style="margin-top:12px">지수 <span class="small">(시가 대비 %)</span></h3>
+    <div id="dayindex" class="grid2"><div class="empty small">차트를 받는 중…</div></div>
+    <h3 style="margin-top:12px">거래 ${(d.rows||[]).length}건 (시간 순) <span class="small">· 오른쪽 차트는 그 종목 1분 경로 · ▲ 매수 ▼ 매도 · 이 거래는 굵게, 같은 종목 다른 거래는 흐리게 · 점선은 시가</span></h3>
+    <div id="daytrades">${rows||'<div class="empty">완결 거래가 없다</div>'}</div>
     <div class="grid2" style="margin-top:12px">
       <div><h3>손실 거래</h3><div class="tw"><table><tr><th>종목</th><th>사유</th><th>갈래</th><th class="num">순손익</th><th class="num">수익률</th><th class="num">최고/최저</th><th class="num">보유</th></tr>${losers||'<tr><td colspan="7" class="empty">—</td></tr>'}</table></div></div>
       <div><h3>매도 사유별</h3><div class="tw"><table><tr><th>사유</th><th class="num">건</th><th class="num">승률</th><th class="num">순손익</th><th class="num">건당</th></tr>${sell||'<tr><td colspan="5" class="empty">—</td></tr>'}</table></div></div>
     </div>
-    <h3 style="margin-top:12px">종목 차트 <span class="small">(1분 · ▲ 매수 ▼ 매도 · 지수는 시가 대비 %)</span></h3>
-    <div id="daycharts" class="grid2"><div class="empty">차트를 받는 중…</div></div>
     <h3 style="margin-top:12px">진입 규칙이 막은 재진입 <span class="small">(같은 날 · 직전가 위 / 하루 상한 · ${(d.reentryBlocks||[]).length}건)</span></h3>
     <div class="tw"><table><tr><th>시각</th><th>종목 · 규칙</th><th class="num">직전 매수가 / 접수</th><th class="num">신호가</th><th class="num">+30분 / +60분</th><th class="num">이후 최고/최저</th><th>판정</th></tr>${(d.reentryBlocks||[]).map(b=>`<tr><td>${esc(b.kst)}</td><td>${esc(b.name||'')} <span class="small">${esc(b.code)} · ${b.rule==='count'?'하루 상한':'직전가 위'}</span></td><td class="num">${b.prevBuy?n(b.prevBuy):`오늘 ${b.attempts}회 / 상한 ${b.cap}회`}</td><td class="num">${n(b.signal)} <span class="small">${b.abovePct!=null?pct(b.abovePct):''}</span></td><td class="num">${pct((b.after||{}).m30)} / ${pct((b.after||{}).m60)}</td><td class="num">${pct((b.after||{}).hi)} / ${pct((b.after||{}).lo)}</td><td>${esc(b.mark||'')}</td></tr>`).join('')||'<tr><td colspan="7" class="empty">— 막힌 재진입 없음(규칙 도입 전이거나 해당 없음)</td></tr>'}</table></div>
     <h3 style="margin-top:12px">진입 깔때기 (레인별)</h3>
@@ -385,8 +401,8 @@ function priceChart(series, marks, opt){
   let d='', pen=false;
   series.p.forEach((v,i)=>{ if(v==null){ pen=false; return; } const px=x(series.first+i*series.step), py=y(v); d+=(pen?'L':'M')+px.toFixed(1)+','+py.toFixed(1); pen=true; });
   s+=`<path d="${d}" fill="none" stroke="var(--accent)" stroke-width="1.5" stroke-linejoin="round"/>`;
-  for(const m of marks){ const px=x(m.t), py=y(m.p); const up=m.kind==='buy';
-    s+=`<path d="${up?`M${px},${py-9} L${px-6},${py+1} L${px+6},${py+1} Z`:`M${px},${py+9} L${px-6},${py-1} L${px+6},${py-1} Z`}" fill="${up?'var(--gain)':'var(--loss)'}" stroke="var(--surface)" stroke-width="1"><title>${esc(m.label)}</title></path>`; }
+  for(const m of marks){ const px=x(m.t), py=y(m.p); const up=m.kind==='buy'; const strong=m.strong!==false; const h=strong?10:6, w=strong?7:4, op=strong?1:0.45;
+    s+=`<path d="${up?`M${px},${py-h} L${px-w},${py+1} L${px+w},${py+1} Z`:`M${px},${py+h} L${px-w},${py-1} L${px+w},${py-1} Z`}" fill="${up?'var(--gain)':'var(--loss)'}" fill-opacity="${op}" stroke="var(--surface)" stroke-width="1"><title>${esc(m.label)}</title></path>`; }
   s+=`<rect class="hit" x="${L}" y="${T}" width="${iw}" height="${ih}" fill="transparent"/></svg><div class="tip"></div>`;
   const el=document.createElement('div'); el.className='chart'; el.innerHTML=`<div class="small" style="margin:0 0 2px">${opt.title}</div>`+s;
   const tip=el.querySelector('.tip'), hit=el.querySelector('.hit'), svg=el.querySelector('svg');
@@ -395,31 +411,33 @@ function priceChart(series, marks, opt){
   return el;
 }
 function renderDayCharts(d){
-  const box=document.getElementById('daycharts'); if(!box) return;
+  const idx=document.getElementById('dayindex'); if(!idx) return;
   chartsFor(d).then(ch=>{
-    if(!document.getElementById('daycharts')) return;   // 그 사이 다른 날로 갔다
-    if(!ch){ box.innerHTML='<div class="empty">이 날의 차트 자료가 없다(자료를 올린 뒤 펼치면 보인다)</div>'; return; }
-    box.innerHTML='';
+    const idxNow=document.getElementById('dayindex'); if(!idxNow) return;   // 그 사이 다른 날로 갔다
+    const slots=[...document.querySelectorAll('#daytrades .tchart')];
+    if(!ch){ idxNow.innerHTML='<div class="empty small">이 날의 차트 자료가 없다(자료를 올린 뒤 펼치면 보인다)</div>'; for(const s of slots) s.innerHTML='<div class="small empty">차트 자료 없음</div>'; return; }
+    idxNow.innerHTML='';
     for(const [k,label] of [['KOSPI','코스피'],['KOSDAQ','코스닥']]){
       const s=(ch.index||{})[k]; if(!s) continue;
       const first=s.p.find(v=>v!=null); if(first==null) continue;
       const rel={first:s.first,step:s.step,p:s.p.map(v=>v==null?null:(v/first-1)*100)};
       const last=[...s.p].reverse().find(v=>v!=null);
-      box.appendChild(priceChart(rel,[],{title:`${label} · 시가 대비 ${pct((last/first-1)*100)}`,basePrice:0,fmtAxis:v=>v.toFixed(1)+'%',fmtTip:v=>pct(v),height:120}));
+      idxNow.appendChild(priceChart(rel,[],{title:`${label} · 시가 대비 ${pct((last/first-1)*100)}`,basePrice:0,fmtAxis:v=>v.toFixed(1)+'%',fmtTip:v=>pct(v),height:110}));
     }
-    const codes=[]; for(const r of d.rows||[]) if(!codes.includes(r.code)) codes.push(r.code);
-    for(const code of codes){
-      const s=(ch.symbols||{})[code]; if(!s) continue;
-      const rows=(d.rows||[]).filter(r=>r.code===code); const name=rows[0]?rows[0].name:code;
+    if(!idxNow.children.length) idxNow.innerHTML='<div class="empty small">지수 자료 없음</div>';
+    // 거래 카드마다 그 종목 차트 — 이 거래의 ▲▼는 굵게, 같은 종목의 다른 거래는 흐리게.
+    for(const slot of slots){
+      const i=+slot.dataset.i, r=(d.rows||[])[i]; if(!r){ continue; }
+      const s=(ch.symbols||{})[r.code];
+      if(!s){ slot.innerHTML='<div class="small empty">이 종목의 차트 자료 없음</div>'; continue; }
       const marks=[];
-      for(const r of rows){ const bt=secOfHms(r.buyAt), st=secOfHms(r.sellAt);
-        if(bt!=null&&r.buyPrice) marks.push({kind:'buy',t:bt,p:r.buyPrice,label:`매수 ${r.buyAt} ${n(r.buyPrice)} · ${r.quantity}주`});
-        if(st!=null&&r.sellPrice) marks.push({kind:'sell',t:st,p:r.sellPrice,label:`매도 ${r.sellAt} ${n(r.sellPrice)} · ${esc(r.sellReason||'')} · ${won(r.net)}`}); }
+      for(const o of (d.rows||[]).filter(x=>x.code===r.code)){ const strong=(o===r); const bt=secOfHms(o.buyAt), st=secOfHms(o.sellAt);
+        if(bt!=null&&o.buyPrice) marks.push({kind:'buy',t:bt,p:o.buyPrice,strong,label:`매수 ${o.buyAt} ${n(o.buyPrice)} · ${o.quantity}주`});
+        if(st!=null&&o.sellPrice) marks.push({kind:'sell',t:st,p:o.sellPrice,strong,label:`매도 ${o.sellAt} ${n(o.sellPrice)} · ${esc(o.sellReason||'')} · ${won(o.net)}`}); }
       const open=s.p.find(v=>v!=null), last=[...s.p].reverse().find(v=>v!=null);
-      const net=rows.reduce((a,r)=>a+(r.net||0),0);
-      box.appendChild(priceChart(s,marks,{title:`${esc(name)} <span class="small">${esc(code)}</span> · 시가 대비 ${pct((last/open-1)*100)} · <span class="${cls(net)}">${won(net)}</span>`,basePrice:open,fmtAxis:v=>Math.round(v).toLocaleString('ko-KR'),fmtTip:v=>Math.round(v).toLocaleString('ko-KR')+'원'}));
+      slot.innerHTML='';
+      slot.appendChild(priceChart(s,marks,{title:`${esc(r.name)} <span class="small">${esc(r.code)}</span> · 시가 대비 ${pct((last/open-1)*100)}`,basePrice:open,fmtAxis:v=>Math.round(v).toLocaleString('ko-KR'),fmtTip:v=>Math.round(v).toLocaleString('ko-KR')+'원',height:150}));
     }
-    if(!box.children.length) box.innerHTML='<div class="empty">거래한 종목의 차트 자료가 없다</div>';
   });
 }
 
