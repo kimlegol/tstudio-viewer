@@ -149,9 +149,11 @@ const groups = [];
     map.get(key).days.push(d);
   }
   for (const g of map.values()){ g.days.sort((a,b)=>a.day<b.day?-1:1); g.first=g.days[0].day; g.last=g.days[g.days.length-1].day; groups.push(g); }
+  for (const g of groups) g.compareOnly = g.days.every(d=>d.compareOnly===true);   // 서버가 「비교만」으로 준 묶음 — 위 선택 상자에는 안 나오고 비교 탭의 B 후보로만
   groups.sort((a,b)=> (a.person==='나'?0:1)-(b.person==='나'?0:1) || (a.last<b.last?1:-1));
 }
-const state = { scope: groups.length?groups[0].key:null, range:'all', tab:'daily', day:null };
+const viewable = () => groups.filter(g=>!g.compareOnly);
+const state = { scope: viewable().length?viewable()[0].key:null, range:'all', tab:'daily', day:null };
 try{ const s=JSON.parse(localStorage.getItem('tstudio-viewer')||'{}'); if(groups.some(g=>g.key===s.scope)) Object.assign(state,s); }catch(e){}
 // 주소 끝 #20260915 로 열면 그날을 바로 펼친다(링크로 나눌 수 있게).
 { const m=/^#(\d{8})$/.exec(location.hash||''); if(m){ const g=groups.find(x=>x.days.some(d=>d.day===m[1])); if(g){ state.scope=g.key; state.day=m[1]; state.tab='daily'; state.range='all'; } }
@@ -184,7 +186,7 @@ function sum(days){
 function renderControls(){
   document.getElementById('controls').style.display='';
   if(DATA.since||DATA.until){ const m=$('#meta'); if(!m.dataset.range){ m.dataset.range='1'; m.textContent += ` · 담은 범위 ${DATA.since?ymd(DATA.since):'처음'}~${DATA.until?ymd(DATA.until):'마지막 집계본'}`; } }
-  const sel=$('#scope'); sel.innerHTML = groups.map(g=>`<option value="${esc(g.key)}"${g.key===state.scope?' selected':''}>${esc(g.person)} · ${md(g.first)}~${md(g.last)} · ${g.days.length}일 · ${esc((g.scope||'').slice(0,12))}</option>`).join('');
+  const sel=$('#scope'); sel.innerHTML = viewable().map(g=>`<option value="${esc(g.key)}"${g.key===state.scope?' selected':''}>${esc(g.person)} · ${md(g.first)}~${md(g.last)} · ${g.days.length}일 · ${esc((g.scope||'').slice(0,12))}</option>`).join('');
   sel.onchange = e => { state.scope=e.target.value; state.day=null; save(); render(); };
   const ranges=[['all','전체'],['30','최근 30일'],['7','최근 7일'],['month','이달']];
   $('#range').innerHTML = ranges.map(([k,l])=>`<button data-k="${k}" class="${state.range===k?'on':''}">${l}</button>`).join('');
@@ -353,10 +355,10 @@ function groupedBars(items, opt){
 function renderCompare(main){
   const others=groups.filter(g=>g.key!==state.scope);
   const A=groups.find(g=>g.key===state.scope);
-  if(!A||!others.length){ main.innerHTML='<div class="card empty">비교할 다른 사람의 자료가 없다 — 관리자가 「허용 표…」에서 열어 주면 그 사람의 묶음이 여기 나타난다.</div>'; return; }
+  if(!A||!others.length){ main.innerHTML='<div class="card empty">비교할 다른 사람의 자료가 없다 — 관리자가 「허용 표…」에서 «보기»나 «비교»를 열어 주면 그 사람의 묶음이 여기 나타난다.</div>'; return; }
   if(!others.some(g=>g.key===state.cmp)) state.cmp=others[0].key;
   const B=groups.find(g=>g.key===state.cmp);
-  const nameOf=g=>`${g.person} · ${md(g.first)}~${md(g.last)}`;
+  const nameOf=g=>`${g.person} · ${md(g.first)}~${md(g.last)}${g.compareOnly?' · 비교만':''}`;
   const dA=daysOfGroup(A.key), dB=daysOfGroup(B.key);
   const capA=capitalOf(A.person), capB=capitalOf(B.person);
   const byA=new Map(dA.map(d=>[d.day,d])), byB=new Map(dB.map(d=>[d.day,d]));
@@ -598,21 +600,23 @@ function serverMode(){
     try {
       const a = await call('admin');
       const admins = new Set(a.admins||[]);
-      const has = new Set((a.grants||[]).map(g=>g.viewerUserId+'|'+g.ownerUserId));
+      const gv = new Map((a.grants||[]).map(g=>[g.viewerUserId+'|'+g.ownerUserId, g]));
       const owners = a.owners||[];
       if(!owners.length){ box.innerHTML = '<h2>허용 표</h2><div class="empty">아직 올라온 보고서가 없다.</div>'; return; }
       const head = owners.map(o=>`<th class="num">${esc(o.email)}<div class="small">${esc(o.lastDay||'')}까지 ${o.days}일</div></th>`).join('');
       const rows = (a.users||[]).map(u=>{
         const cells = owners.map(o=>{
           const self = u.userId===o.userId, adm = admins.has(u.userId);
-          const checked = self||adm||has.has(u.userId+'|'+o.userId);
-          return `<td class="num"><input type="checkbox" data-v="${u.userId}" data-o="${o.userId}" ${checked?'checked':''} ${(self||adm)?'disabled':''} title="${self?'자기 것':adm?'관리자는 전부':''}"></td>`; }).join('');
+          const g = gv.get(u.userId+'|'+o.userId)||{}; const view = self||adm||g.allowView===true, cmp = self||adm||g.allowCompare===true;
+          return `<td class="num" style="white-space:nowrap"><label class="small"><input type="checkbox" data-k="view" data-v="${u.userId}" data-o="${o.userId}" ${view?'checked':''} ${(self||adm)?'disabled':''} title="${self?'자기 것':adm?'관리자는 전부':'보고서 전부(하루 상세·차트)'}"> 보기</label> <label class="small"><input type="checkbox" data-k="compare" data-v="${u.userId}" data-o="${o.userId}" ${cmp?'checked':''} ${(self||adm)?'disabled':''} title="비교 탭에서만(날짜별 합계·거래 행 요약)"> 비교</label></td>`; }).join('');
         return `<tr><td>${esc(u.email)}<span class="small"> · ${esc(u.status)}${admins.has(u.userId)?' · 관리자':''}</span></td>${cells}</tr>`; }).join('');
-      box.innerHTML = `<div class="dayhead"><h2>허용 표 — 행의 사용자에게 열의 보고서를 보여준다</h2><span class="small">자기 것·관리자는 늘 본다 · 체크는 바로 저장된다</span></div>
+      box.innerHTML = `<div class="dayhead"><h2>허용 표 — 행의 사용자에게 열의 보고서를 보여준다</h2><span class="small">«보기» = 보고서 전부(하루 상세·차트) · «비교» = 비교 탭에서만(날짜별 합계·거래 행 요약) · 자기 것·관리자는 늘 전부 · 체크는 바로 저장된다</span></div>
         <div class="tw"><table><tr><th>사용자 ↓ · 보고서 주인 →</th>${head}</tr>${rows}</table></div><div id="adminmsg" class="small" style="margin-top:6px;min-height:18px"></div>`;
       box.querySelectorAll('input[type=checkbox]').forEach(cb => cb.onchange = async () => {
         const m = document.getElementById('adminmsg'); cb.disabled = true;
-        try { const r = await call('grant', {viewerUserId:cb.dataset.v, ownerUserId:cb.dataset.o, allow:cb.checked}); m.textContent = r.message||''; }
+        const pair = box.querySelectorAll(`input[data-v="${cb.dataset.v}"][data-o="${cb.dataset.o}"]`);
+        const flags = {}; pair.forEach(x => flags[x.dataset.k] = x.checked);
+        try { const r = await call('grant', {viewerUserId:cb.dataset.v, ownerUserId:cb.dataset.o, allowView:!!flags.view, allowCompare:!!flags.compare}); m.textContent = r.message||''; }
         catch(err){ cb.checked = !cb.checked; m.textContent = '실패 — ' + (err.message||err); }
         cb.disabled = false;
       });
@@ -630,7 +634,7 @@ function serverMode(){
       for(const p of parts){
         if(p.err){ failed.push(p.o.email+' — '+(p.err.message||p.err)); continue; }
         if(!base) base = p.d;
-        for(const d of (p.d.days||[])){ d.person = p.o.userId===lst.me.userId ? '나' : p.o.email.split('@')[0]; d._owner = p.o.userId; d.links = {report:null, journal:null}; days.push(d); }
+        for(const d of (p.d.days||[])){ d.person = p.o.userId===lst.me.userId ? '나' : p.o.email.split('@')[0]; d._owner = p.o.userId; d.links = {report:null, journal:null}; if(p.o.access==='compare') d.compareOnly = true; days.push(d); }
       }
       if(!base){ main.innerHTML = '<div class="card empty">자료를 받지 못했다 — ' + esc(failed.join(' · ')) + '</div>'; return; }
       days.sort((a,b)=> a.day<b.day?-1 : a.day>b.day?1 : a.person<b.person?-1:1);
