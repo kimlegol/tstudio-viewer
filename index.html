@@ -431,7 +431,7 @@ function serverMode(){
       for(const p of parts){
         if(p.err){ failed.push(p.o.email+' — '+(p.err.message||p.err)); continue; }
         if(!base) base = p.d;
-        for(const d of (p.d.days||[])){ d.person = p.o.email.split('@')[0]; d.links = {report:null, journal:null}; days.push(d); }
+        for(const d of (p.d.days||[])){ d.person = p.o.userId===lst.me.userId ? '나' : p.o.email.split('@')[0]; d.links = {report:null, journal:null}; days.push(d); }
       }
       if(!base){ main.innerHTML = '<div class="card empty">자료를 받지 못했다 — ' + esc(failed.join(' · ')) + '</div>'; return; }
       days.sort((a,b)=> a.day<b.day?-1 : a.day>b.day?1 : a.person<b.person?-1:1);
