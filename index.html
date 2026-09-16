@@ -81,6 +81,7 @@ tr.sel td{background:var(--wash);box-shadow:inset 3px 0 var(--accent)}
 .warn{font-size:12px;color:var(--ink2);border-left:3px solid var(--lane4);padding:4px 8px;margin:4px 0;background:var(--wash)}
 .small{font-size:12px;color:var(--muted)}
 .empty{color:var(--muted);padding:12px 0}
+tr.dim td{color:var(--muted)}
 .dayhead{display:flex;flex-wrap:wrap;gap:8px 16px;align-items:baseline;justify-content:space-between}
 .tcard{display:grid;grid-template-columns:minmax(230px,1fr) minmax(280px,1.5fr);gap:6px 14px;padding:10px 0;border-bottom:1px solid var(--grid);align-items:start}
 .tcard:last-child{border-bottom:0}
@@ -467,6 +468,12 @@ function renderDay(d){
       <div class="small"><span class="k">살 때</span>등락 ${pct((r.entry||{}).changeRate)} · 창 ${pct((r.entry||{}).windowReturnPct)} · 반등 ${pct((r.entry||{}).bounceFromLowPct)} · 강도 ${n((r.entry||{}).contractStrength)} · ${esc((r.entry||{}).marketRegime||'')}</div>
       <div class="small"><span class="k">잔량비</span>매도/매수 살 때 ${ratio((r.depth||{}).atBuy)} → 5분 ${ratio((r.depth||{}).m5)} → 10분 ${ratio((r.depth||{}).m10)} · 보유 중 평균 ${ratio((r.depth||{}).holdMean)}${r.idxHoldPct!=null?` · <span class="k">지수</span>보유 중 ${pct(r.idxHoldPct)}`:''}</div>
     </div><div class="tchart" data-i="${i}"><div class="small empty">차트를 받는 중…</div></div></div>`).join('');
+  // 재매매 추정(2026-09-17) — 거래별 유지/차단/매도 바뀜과 추정 순손익. 옛 집계본은 rp가 null.
+  const rp=d.ruleReplay, rpT=(rp||{}).totals||{}, rpR=(rp||{}).rules||{};
+  const rpRows=((rp||{}).rows||[]).map(x=>`<tr class="${x.verdict==='blocked'?'dim':''}"><td>${esc(x.buyAt)}</td><td>${esc(x.name||x.code)} <span class="small">${esc(LANE_LABEL[x.lane]||x.lane||'')}</span></td><td class="num ${cls(x.actualNet)}">${won(x.actualNet)}</td><td class="small">${esc(x.actualReason||'—')}</td><td>${x.verdict==='blocked'?'<b>진입 차단</b>':x.verdict==='sellChanged'?'<b>매도 바뀜</b>':'유지'}${x.why?` <span class="small">· ${esc(x.why)}</span>`:''}</td><td class="num ${x.verdict==='blocked'?'':cls(x.estNet)}">${x.verdict==='blocked'?'—':won(x.estNet)}</td></tr>`).join('');
+  const rpLead=rp?`실제 ${rpT.actualTrades||0}건 <b class="${cls(rpT.actualNet)}">${won(rpT.actualNet)}</b> → 지금 규칙이면 ${rpT.keptTrades||0}건 <b class="${cls(rpT.estNet)}">${won(rpT.estNet)}</b> · 차이 <b class="${cls(rpT.delta)}">${won(rpT.delta)}</b> <span class="small">(진입 차단 ${rpT.blockedTrades||0}건 ${won(-(rpT.blockedNet||0))} · 매도 규칙 ${rpT.sellChangedTrades||0}건 ${won(rpT.sellDelta||0)} · 이익/손실 ${rpT.actualWins||0}/${rpT.actualLosses||0} → ${rpT.estWins||0}/${rpT.estLosses||0})</span>`:'';
+  const rpLanes=Object.entries(rpR.lanes||{}).filter(([k,v])=>v&&(v[0]!=null||v[1]!=null)).map(([k,v])=>`${LANE_LABEL[k]||k} ${v[0]!=null&&v[1]!=null?`${v[0]}~${v[1]}%`:v[0]!=null?`≥ ${v[0]}%`:`≤ ${v[1]}%`}`).join(' · ');
+  const rpRule=rp?`지금 규칙(이 PC 설정) — 등락률 범위 ${esc(rpLanes)||'—'} · 재진입 직전가 이하만 ${rpR.reentryOnlyAtOrBelow?'ON':'OFF'} · 종목별 하루 ${rpR.maxEntriesPerSymbol||'OFF'}회 · ${rpR.sellChanged?`트레일 무장 그날 ${rpR.trailArmDay==null?'OFF':pct(rpR.trailArmDay,1)} → 지금 ${rpR.trailArmNow==null?'OFF':pct(rpR.trailArmNow,1)}`:'매도 규칙은 그날과 같다'}. 막힌 거래는 뒤 거래의 직전가·횟수에서도 빠진다 · 매도는 규칙이 판 거래만 같은 1분 경로로 두 규칙을 돌려 다를 때만 차이를 더한다 · 2차 효과(빈 자리에 다른 종목)는 세지 않는다. ${(rp.notes||[]).map(esc).join(' ')}`:'';
   const funnel=LANE_ORDER.map(l=>{const f=(d.funnel||{})[l]; if(!f) return `<tr><td><span class="lane" style="background:${LANE_COLOR[l]}"></span>${LANE_LABEL[l]}</td><td colspan="7" class="empty">—</td></tr>`;
     const rej=((d.rejections||{})[l]||[]).slice(0,3).map(([k,v])=>`${esc(k)} ${n(v)}`).join(' · ');
     return `<tr><td><span class="lane" style="background:${LANE_COLOR[l]}"></span>${esc(f.label)}</td><td class="num">${n(f.evaluated)}</td><td class="num">${n(f.passed)}</td><td class="num">${f.passRatePct==null?'—':f.passRatePct.toFixed(3)+'%'}</td><td class="num">${n(f.passedCodes)}</td><td class="num">${n(f.droppedCapacity)}</td><td class="num ${cls(f.net)}">${won(f.net)}</td><td class="small">${rej}</td></tr>`;}).join('');
@@ -494,6 +501,10 @@ function renderDay(d){
     <div class="tw"><table><tr><th>시각</th><th>종목 · 규칙</th><th class="num">직전 매수가 / 접수</th><th class="num">신호가</th><th class="num">+30분 / +60분</th><th class="num">이후 최고/최저</th><th>판정</th></tr>${(d.reentryBlocks||[]).map(b=>`<tr><td>${esc(b.kst)}</td><td>${esc(b.name||'')} <span class="small">${esc(b.code)} · ${b.rule==='count'?'하루 상한':'직전가 위'}</span></td><td class="num">${b.prevBuy?n(b.prevBuy):`오늘 ${b.attempts}회 / 상한 ${b.cap}회`}</td><td class="num">${n(b.signal)} <span class="small">${b.abovePct!=null?pct(b.abovePct):''}</span></td><td class="num">${pct((b.after||{}).m30)} / ${pct((b.after||{}).m60)}</td><td class="num">${pct((b.after||{}).hi)} / ${pct((b.after||{}).lo)}</td><td>${esc(b.mark||'')}</td></tr>`).join('')||'<tr><td colspan="7" class="empty">— 막힌 재진입 없음(규칙 도입 전이거나 해당 없음)</td></tr>'}</table></div>
     <h3 style="margin-top:12px">진입 깔때기 (레인별)</h3>
     <div class="tw"><table><tr><th>레인</th><th class="num">평가</th><th class="num">통과</th><th class="num">통과율</th><th class="num">통과 종목</th><th class="num">용량 초과</th><th class="num">순손익</th><th>주요 거절 사유</th></tr>${funnel}</table></div>
+    <h3 style="margin-top:12px">지금 규칙으로 그날을 다시 매매했다면 <span class="small">(재매매 추정 · 근사 · 관찰)</span></h3>
+    ${rp?`<div style="margin:0 0 6px">${rpLead}</div>
+    <div class="tw"><table><tr><th>매수</th><th>종목 · 레인</th><th class="num">실제</th><th>실제 매도</th><th>지금 규칙이면</th><th class="num">추정</th></tr>${rpRows||'<tr><td colspan="6" class="empty">— 완결 거래 없음</td></tr>'}</table></div>
+    <div class="small" style="margin-top:4px">${rpRule}</div>`:`<div class="small empty">— 이 날 집계본에는 재매매 절이 없다(2026-09-17 이전 집계본 · 다시 구우면 채워진다)</div>`}
     <div class="small" style="margin-top:8px">완결성 — 0B ${n(comp.tickLines)}줄 · ${n(comp.tickCodes)}종목 · ${esc(comp.tickFirst||'')}~${esc(comp.tickLast||'')} · 그림자 ${n(comp.shadowRows)}줄${comp.shadowIncomplete?' · 미완결 '+comp.shadowIncomplete:''}${gaps?' · 틱 공백 '+gaps:''}</div>
   </div>`;
   renderDayCharts(d);
