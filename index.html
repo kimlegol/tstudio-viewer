@@ -91,7 +91,7 @@ tr.sel td{background:var(--wash);box-shadow:inset 3px 0 var(--accent)}
     <select id="scope"></select>
     <span class="seg" id="range"></span>
     <span class="seg" id="tab"></span>
-    <label class="small" title="하루에 굴리는 돈(일일매수금액한도). 순손익을 이 금액으로 나눈 수익률을 보여준다. 사용자마다 따로 기억한다">운영자금(사용자별) <input id="capital" type="text" inputmode="numeric" style="width:110px;text-align:right;font:inherit;color:var(--ink);background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:4px 7px"> 원</label>
+    <label class="small" title="하루에 굴리는 돈(일일매수금액한도). 순손익을 이 금액으로 나눈 수익률을 보여준다. 사용자마다 따로 기억한다">운영자금(사용자별) <input id="capital" type="text" inputmode="numeric" style="width:110px;text-align:right;font:inherit;color:var(--ink);background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:4px 7px"> 원 <span id="capmsg" class="small"></span></label>
   </div>
 </div>
 <div id="tiles" class="tiles"></div>
@@ -99,7 +99,7 @@ tr.sel td{background:var(--wash);box-shadow:inset 3px 0 var(--accent)}
 <div id="day"></div>
 <script id="data" type="application/json"></script>
 <script>
-function boot(DATA, chartLoader){
+function boot(DATA, chartLoader, capitals){
 const LANE_ORDER = DATA.laneOrder, LANE_LABEL = DATA.laneLabel;
 const LANE_COLOR = {MULTI_DAY_OVERSOLD:'var(--lane1)',VOLUME_SURGE_REBOUND:'var(--lane2)',DEEP_DROP_REBOUND:'var(--lane3)',REVERSAL_RECOVERY:'var(--lane4)'};
 const $ = s => document.querySelector(s);
@@ -119,10 +119,15 @@ function isoWeekKey(d){ const dt=new Date(ymd(d)+'T00:00:00'); const day=(dt.get
 function weekRange(key){ const a=new Date(key+'T00:00:00'); const b=new Date(a); b.setDate(a.getDate()+4); const f=x=>String(x.getMonth()+1).padStart(2,'0')+'-'+String(x.getDate()).padStart(2,'0'); return f(a)+'~'+f(b); }
 // 운영자금 — 하루에 굴리는 돈(일일매수금액한도). 순손익을 이것으로 나눈 것이 «운영자금 대비 %», 그날 실제 매수금 합으로 나눈 것이 «매수금 대비 %».
 // ⚑ 사용자마다 다르다(2026-09-16) — 사람별로 기억한다. 기본 15,000,000원.
+// 웹 판은 서버에 둔다(2026-09-16 저녁 · 사용자 결정): capitals={map:{사람:원}, save:(원)=>Promise} — 자기 것(«나»)만 고칠 수 있고 남의 값은 그 사람이 정한 값 그대로다.
 const CAPITAL_KEY='tstudio-viewer-capital-map';
-const CAP_MAP = (()=>{ try{ const m=JSON.parse(localStorage.getItem(CAPITAL_KEY)||'{}'); return (m&&typeof m==='object')?m:{}; }catch(e){ return {}; } })();
-function capitalOf(person){ const v=Number(CAP_MAP[person]); return v>0?v:15000000; }
-function setCapital(person,v){ CAP_MAP[person]=v; try{ localStorage.setItem(CAPITAL_KEY, JSON.stringify(CAP_MAP)); }catch(e){} }
+const SERVER_CAPS = capitals ? (capitals.map||{}) : null;
+const CAP_MAP = (()=>{ if(SERVER_CAPS) return {}; try{ const m=JSON.parse(localStorage.getItem(CAPITAL_KEY)||'{}'); return (m&&typeof m==='object')?m:{}; }catch(e){ return {}; } })();
+function capitalOf(person){ const v=Number(SERVER_CAPS ? SERVER_CAPS[person] : CAP_MAP[person]); return v>0?v:15000000; }
+function setCapital(person,v){
+  if(SERVER_CAPS){ if(person!=='나') return Promise.resolve(); SERVER_CAPS[person]=v; return capitals.save(v); }
+  CAP_MAP[person]=v; try{ localStorage.setItem(CAPITAL_KEY, JSON.stringify(CAP_MAP)); }catch(e){} return Promise.resolve();
+}
 let CAPITAL = 15000000;   // render()가 고른 묶음의 사람 값으로 매번 다시 채운다
 const pctOf=(net,base)=> base>0 ? net/base*100 : null;
 // 차트 자료(하루별 · 거래 종목 1분 경로 + 지수) — 로컬 자체 포함 판은 심겨 있고, 껍데기·웹 판은 그날을 펼칠 때 받는다.
@@ -195,8 +200,14 @@ function renderControls(){
   $('#tab').innerHTML = tabs.map(([k,l])=>`<button data-k="${k}" class="${state.tab===k?'on':''}">${l}</button>`).join('');
   $('#tab').querySelectorAll('button').forEach(b=>b.onclick=()=>{state.tab=b.dataset.k; save(); render();});
   const g=groups.find(x=>x.key===state.scope); const person=g?g.person:'나';
-  const cap=$('#capital'); cap.value=Math.round(CAPITAL).toLocaleString('ko-KR'); cap.title=`${person}의 운영자금 — 사용자마다 따로 기억한다`;
-  cap.onchange=()=>{ const v=Number(String(cap.value).replace(/[^0-9]/g,'')); if(v>0) setCapital(person,v); render(); };
+  const cap=$('#capital'); cap.value=Math.round(CAPITAL).toLocaleString('ko-KR');
+  const mine = !SERVER_CAPS || person==='나'; cap.disabled=!mine;
+  cap.title = mine ? `${person}의 운영자금 — ${SERVER_CAPS?'서버에 저장된다 · 자기 것만 고칠 수 있다':'사용자마다 따로 기억한다'}` : `${person}의 운영자금 — 그 사람이 정한 값 · 여기서는 못 바꾼다`;
+  const msg=$('#capmsg'); if(msg) msg.textContent = mine ? '' : '(본인만 변경)';
+  cap.onchange=()=>{ const v=Number(String(cap.value).replace(/[^0-9]/g,'')); if(!(v>0)||!mine){ render(); return; }
+    setCapital(person,v).then(()=>{ if(msg&&SERVER_CAPS){ msg.textContent='저장됨'; setTimeout(()=>{ if(msg.textContent==='저장됨') msg.textContent=''; },2000); } })
+      .catch(err=>{ if(msg) msg.textContent='저장 실패 — '+(err.message||err); });
+    render(); };
 }
 
 // ── 타일 ─────────────────────────────────────────────────────────────────────
@@ -639,7 +650,10 @@ function serverMode(){
       if(!base){ main.innerHTML = '<div class="card empty">자료를 받지 못했다 — ' + esc(failed.join(' · ')) + '</div>'; return; }
       days.sort((a,b)=> a.day<b.day?-1 : a.day>b.day?1 : a.person<b.person?-1:1);
       const m = document.getElementById('meta'); if(m) m.textContent = m.textContent.replace('(서버 자료)', base.generatedAt||'') + (failed.length?' · 못 받음: '+failed.join(' · '):'');
-      boot(Object.assign({}, base, {days}), d => call('charts', {ownerUserId:d._owner, day:d.day}).then(r => r.data || null));
+      const capMap = {}; for(const o of owners){ const nm = o.userId===lst.me.userId ? '나' : o.email.split('@')[0]; if(o.capital>0) capMap[nm]=Number(o.capital); }
+      if(lst.me.capital>0) capMap['나']=Number(lst.me.capital);
+      boot(Object.assign({}, base, {days}), d => call('charts', {ownerUserId:d._owner, day:d.day}).then(r => r.data || null),
+           {map:capMap, save: v => call('capital', {capital:v})});
     } catch(err){
       if(err.auth) showLogin(err.message==='로그인이 필요하다'?'':err.message); else main.innerHTML = '<div class="card empty">' + esc(err.message||err) + '</div>';
     }
