@@ -110,6 +110,7 @@ const pct = (v,d=2) => v==null ? '—' : (v>0?'+':v<0?'−':'') + Math.abs(v).to
 const pctPlain = (v,d=1) => v==null ? '—' : v.toFixed(d) + '%';
 const n = v => v==null ? '—' : Number(v).toLocaleString('ko-KR');
 const cls = v => v>0?'gain':v<0?'loss':'';
+const ratio = v => v==null ? '—' : Number(v).toFixed(2);
 const hold = s => s==null?'—': s>=3600? Math.floor(s/3600)+'시간 '+Math.floor(s%3600/60)+'분' : Math.floor(s/60)+'분 '+(s%60)+'초';
 const ymd = d => d.slice(0,4)+'-'+d.slice(4,6)+'-'+d.slice(6,8);
 const md = d => d.slice(4,6)+'-'+d.slice(6,8);
@@ -452,6 +453,7 @@ function renderDay(d){
       <div><span class="k">보유 중</span>최고 ${pct((r.held||{}).hi)} · 최저 ${pct((r.held||{}).lo)}</div>
       <div><span class="k">판 뒤</span>+30분 ${pct((r.after||{}).m30)} · +60분 ${pct((r.after||{}).m60)} · <b>${esc(r.afterMark||'')}</b></div>
       <div class="small"><span class="k">살 때</span>등락 ${pct((r.entry||{}).changeRate)} · 창 ${pct((r.entry||{}).windowReturnPct)} · 반등 ${pct((r.entry||{}).bounceFromLowPct)} · 강도 ${n((r.entry||{}).contractStrength)} · ${esc((r.entry||{}).marketRegime||'')}</div>
+      <div class="small"><span class="k">잔량비</span>매도/매수 살 때 ${ratio((r.depth||{}).atBuy)} → 5분 ${ratio((r.depth||{}).m5)} → 10분 ${ratio((r.depth||{}).m10)} · 보유 중 평균 ${ratio((r.depth||{}).holdMean)}${r.idxHoldPct!=null?` · <span class="k">지수</span>보유 중 ${pct(r.idxHoldPct)}`:''}</div>
     </div><div class="tchart" data-i="${i}"><div class="small empty">차트를 받는 중…</div></div></div>`).join('');
   const funnel=LANE_ORDER.map(l=>{const f=(d.funnel||{})[l]; if(!f) return `<tr><td><span class="lane" style="background:${LANE_COLOR[l]}"></span>${LANE_LABEL[l]}</td><td colspan="7" class="empty">—</td></tr>`;
     const rej=((d.rejections||{})[l]||[]).slice(0,3).map(([k,v])=>`${esc(k)} ${n(v)}`).join(' · ');
