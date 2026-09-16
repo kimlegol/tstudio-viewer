@@ -46,7 +46,13 @@ button:hover:not(.on){background:var(--wash)}
 .seg button:last-child{border-right:0}
 .card{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:12px 14px;margin-bottom:12px}
 .tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px;margin-bottom:12px}
-.tiles.cmp-a .tile{border-left:3px solid var(--lane1)} .tiles.cmp-b .tile{border-left:3px solid var(--lane2)}
+.cmpgrid{display:grid;grid-template-columns:110px 1fr 1fr 130px;gap:8px;align-items:stretch}
+.cmpgrid .hd{font-weight:600;padding:2px 4px;align-self:end}
+.cmpgrid .lbl{font-size:12px;color:var(--muted);align-self:center;padding-left:4px}
+.cmpgrid .tile.a{border-left:3px solid var(--lane1)} .cmpgrid .tile.b{border-left:3px solid var(--lane2)}
+.cmpgrid .dif{align-self:center;text-align:right;font-weight:600;padding-right:4px}
+@media (max-width:760px){.cmpgrid{grid-template-columns:1fr 1fr} .cmpgrid .hd:nth-child(1),.cmpgrid .hd:nth-child(4){display:none} .cmpgrid .lbl{grid-column:1/-1;padding-top:6px} .cmpgrid .dif{grid-column:1/-1;text-align:left;font-size:12px}}
+.cmpgrid .tile{min-width:0} .cmpgrid .tile .v{overflow-wrap:anywhere}
 .tile{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:10px 12px}
 .tile .k{font-size:12px;color:var(--muted)}
 .tile .v{font-size:22px;font-weight:700;line-height:1.2;margin-top:2px}
@@ -383,15 +389,19 @@ function renderCompare(main){
   const sA=sum(dA), sB=sum(dB);
   const pick=`<label class="small">B <select id="cmpsel">${others.map(g=>`<option value="${esc(g.key)}"${g.key===state.cmp?' selected':''}>${esc(nameOf(g))} · ${g.days.length}일</option>`).join('')}</select></label>`;
   const diffPct=(a,b)=> (a==null||b==null) ? '—' : `<span class="${cls(a-b)}">${(a-b>0?'+':a-b<0?'−':'')+Math.abs(a-b).toFixed(2)}%p</span>`;
+  const diffWon=(a,b)=> (a==null||b==null) ? '—' : `<span class="${cls(a-b)}">${won(a-b)}</span>`;
+  // 타일 순서(tileSet)와 같은 순서의 차이 칸 — 순손익 합 · 운영자금 대비 · 매수금 대비 · 거래일 평균 · 완결 거래 · 승률 · 건당 평균 · 최저 거래일
+  const diffs=[diffWon(sA.net,sB.net), diffPct(pctOf(sA.net,capA),pctOf(sB.net,capB)), diffPct(pctOf(sA.net,sA.buy),pctOf(sB.net,sB.buy)),
+    diffWon(sA.days?sA.net/sA.days:null, sB.days?sB.net/sB.days:null), `<span class="${cls(sA.trades-sB.trades)}">${(sA.trades-sB.trades>0?'+':'')+n(sA.trades-sB.trades)}건</span>`,
+    diffPct(sA.winRate,sB.winRate), diffWon(sA.trades?sA.net/sA.trades:null, sB.trades?sB.net/sB.trades:null), diffWon(sA.worst?sA.worst.net:null, sB.worst?sB.worst.net:null)];
+  // 좌우 비교 — 지표 한 줄에 A 타일 · B 타일 · 차이(2026-09-16 사용자 요청 「좌우로 비교」)
+  const cmpRows=(ta,tb,df)=>ta.map(([k,va,sa],i)=>`<div class="lbl">${k}</div><div class="tile a"><div class="v">${va}</div><div class="s">${sa}</div></div><div class="tile b"><div class="v">${tb[i][1]}</div><div class="s">${tb[i][2]}</div></div><div class="dif">${df[i]||'—'}</div>`).join('');
   const head=`<div class="card"><div class="dayhead"><h2>비교 — <span style="color:${CMP_A}">A ${esc(nameOf(A))}</span> vs <span style="color:${CMP_B}">B ${esc(nameOf(B))}</span></h2>${pick}</div>
     <div class="small">A는 위 선택 상자의 묶음, B는 여기서 고른다. 같은 범위(${{all:'전체','30':'최근 30일','7':'최근 7일',month:'이달'}[state.range]})를 두 사람에게 같이 건다. 두 사람은 조건식 원문도 설정도 다르므로 «무엇 때문에»를 하나로 지목하지 않는다 — 같은 날 같은 종목의 첫 진입만 짝지어 본다.</div>
-    <div class="cmphead" style="margin-top:10px;color:${CMP_A}"><b>A · ${esc(nameOf(A))}</b> <span class="small">${sA.days}거래일</span></div>
-    <div class="tiles cmp-a">${tilesHtml(tileSet(sA, capA))}</div>
-    <div class="cmphead" style="margin-top:10px;color:${CMP_B}"><b>B · ${esc(nameOf(B))}</b> <span class="small">${sB.days}거래일</span></div>
-    <div class="tiles cmp-b">${tilesHtml(tileSet(sB, capB))}</div>
-    <div class="tw" style="margin-top:10px"><table class="narrow"><tr><th>차이 (A − B)</th><th class="num">순손익</th><th class="num">운영자금 대비</th><th class="num">매수금 대비</th><th class="num">승률</th><th class="num">거래일 평균</th><th class="num">건당 평균</th></tr>
-      <tr><td class="small">같은 범위 · 각자 운영자금</td><td class="num ${cls(sA.net-sB.net)}">${won(sA.net-sB.net)}</td><td class="num">${diffPct(pctOf(sA.net,capA),pctOf(sB.net,capB))}</td><td class="num">${diffPct(pctOf(sA.net,sA.buy),pctOf(sB.net,sB.buy))}</td><td class="num">${diffPct(sA.winRate,sB.winRate)}</td><td class="num ${cls((sA.days?sA.net/sA.days:0)-(sB.days?sB.net/sB.days:0))}">${sA.days&&sB.days?won(sA.net/sA.days-sB.net/sB.days):'—'}</td><td class="num ${cls((sA.trades?sA.net/sA.trades:0)-(sB.trades?sB.net/sB.trades:0))}">${sA.trades&&sB.trades?won(sA.net/sA.trades-sB.net/sB.trades):'—'}</td></tr>
-    </table></div></div>`;
+    <div class="cmpgrid" style="margin-top:10px">
+      <div class="hd"></div><div class="hd" style="color:${CMP_A}">A · ${esc(nameOf(A))} <span class="small">${sA.days}거래일</span></div><div class="hd" style="color:${CMP_B}">B · ${esc(nameOf(B))} <span class="small">${sB.days}거래일</span></div><div class="hd">차이 A − B</div>
+      ${cmpRows(tileSet(sA, capA), tileSet(sB, capB), diffs)}
+    </div></div>`;
   main.innerHTML=head;
   document.getElementById('cmpsel').onchange=e=>{ state.cmp=e.target.value; save(); render(); };
   // 1. 날짜별 나란히
