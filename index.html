@@ -177,7 +177,7 @@ function save(){ try{ localStorage.setItem('tstudio-viewer', JSON.stringify(stat
 function daysOfGroup(key){
   const g = groups.find(x=>x.key===key); if(!g) return [];
   let days = g.days;
-  if(state.range==='7'||state.range==='30'){ days = days.slice(-Number(state.range)); }
+  if(state.range==='1'||state.range==='7'||state.range==='30'){ days = days.slice(-Number(state.range)); }
   else if(state.range==='month'){ const m = monthKey(g.last); days = days.filter(d=>monthKey(d.day)===m); }
   return days;
 }
@@ -202,7 +202,7 @@ function renderControls(){
   if(DATA.since||DATA.until){ const m=$('#meta'); if(!m.dataset.range){ m.dataset.range='1'; m.textContent += ` · 담은 범위 ${DATA.since?ymd(DATA.since):'처음'}~${DATA.until?ymd(DATA.until):'마지막 집계본'}`; } }
   const sel=$('#scope'); sel.innerHTML = viewable().map(g=>`<option value="${esc(g.key)}"${g.key===state.scope?' selected':''}>${esc(g.person)} · ${md(g.first)}~${md(g.last)} · ${g.days.length}일 · ${esc((g.scope||'').slice(0,12))}</option>`).join('');
   sel.onchange = e => { state.scope=e.target.value; state.day=null; save(); render(); };
-  const ranges=[['all','전체'],['30','최근 30일'],['7','최근 7일'],['month','이달']];
+  const ranges=[['all','전체'],['30','최근 30일'],['7','최근 7일'],['1','최근 1일'],['month','이달']];
   $('#range').innerHTML = ranges.map(([k,l])=>`<button data-k="${k}" class="${state.range===k?'on':''}">${l}</button>`).join('');
   $('#range').querySelectorAll('button').forEach(b=>b.onclick=()=>{state.range=b.dataset.k; save(); render();});
   const tabs=[['daily','일별'],['weekly','주별'],['monthly','월별'],['compare','비교']];
@@ -398,7 +398,7 @@ function renderCompare(main){
   // 좌우 비교 — 지표 한 줄에 A 타일 · B 타일 · 차이(2026-09-16 사용자 요청 「좌우로 비교」)
   const cmpRows=(ta,tb,df)=>ta.map(([k,va,sa],i)=>`<div class="lbl">${k}</div><div class="tile a"><div class="v">${va}</div><div class="s">${sa}</div></div><div class="tile b"><div class="v">${tb[i][1]}</div><div class="s">${tb[i][2]}</div></div><div class="dif">${df[i]||'—'}</div>`).join('');
   const head=`<div class="card"><div class="dayhead"><h2>비교 — <span style="color:${CMP_A}">A ${esc(nameOf(A))}</span> vs <span style="color:${CMP_B}">B ${esc(nameOf(B))}</span></h2>${pick}</div>
-    <div class="small">A는 위 선택 상자의 묶음, B는 여기서 고른다. 같은 범위(${{all:'전체','30':'최근 30일','7':'최근 7일',month:'이달'}[state.range]})를 두 사람에게 같이 건다. 두 사람은 조건식 원문도 설정도 다르므로 «무엇 때문에»를 하나로 지목하지 않는다 — 같은 날 같은 종목의 첫 진입만 짝지어 본다.</div>
+    <div class="small">A는 위 선택 상자의 묶음, B는 여기서 고른다. 같은 범위(${{all:'전체','30':'최근 30일','7':'최근 7일','1':'최근 1일',month:'이달'}[state.range]})를 두 사람에게 같이 건다. 두 사람은 조건식 원문도 설정도 다르므로 «무엇 때문에»를 하나로 지목하지 않는다 — 같은 날 같은 종목의 첫 진입만 짝지어 본다.</div>
     <div class="cmpgrid" style="margin-top:10px">
       <div class="hd"></div><div class="hd" style="color:${CMP_A}">A · ${esc(nameOf(A))} <span class="small">${sA.days}거래일</span></div><div class="hd" style="color:${CMP_B}">B · ${esc(nameOf(B))} <span class="small">${sB.days}거래일</span></div><div class="hd">차이 A − B</div>
       ${cmpRows(tileSet(sA, capA), tileSet(sB, capB), diffs)}
