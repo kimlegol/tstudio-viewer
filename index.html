@@ -46,20 +46,13 @@ button:hover:not(.on){background:var(--wash)}
 .seg button:last-child{border-right:0}
 .card{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:12px 14px;margin-bottom:12px}
 .tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px;margin-bottom:12px}
-.cmp-picks{display:flex;flex-wrap:wrap;gap:8px 16px;align-items:center;margin-bottom:10px}
-.cmp-picks label{display:flex;align-items:center;gap:6px;min-width:0;max-width:100%}
-.cmp-details{min-width:760px}
-.cmp-details th,.cmp-details td:first-child{white-space:nowrap}
-.cmp-summary{min-width:660px;table-layout:fixed}
-.cmp-summary.three{min-width:880px}
-.cmp-summary th:first-child{width:108px}
-.cmp-summary th:last-child{width:164px}
-.cmp-summary th{white-space:normal;overflow-wrap:anywhere}
-.cmp-summary td{padding:12px 10px;vertical-align:middle}
-.cmp-summary .v{font-size:20px;font-weight:700;line-height:1.3;overflow-wrap:anywhere}
-.cmp-summary .s{font-size:12px;color:var(--ink2);margin-top:4px;overflow-wrap:anywhere}
-.cmp-spread{font-size:13px;color:var(--ink2)}
-.cmp-notice{margin:8px 0;color:var(--ink2);font-size:12px}
+.cmpgrid{display:grid;grid-template-columns:110px 1fr 1fr 130px;gap:8px;align-items:stretch}
+.cmpgrid .hd{font-weight:600;padding:2px 4px;align-self:end}
+.cmpgrid .lbl{font-size:12px;color:var(--muted);align-self:center;padding-left:4px}
+.cmpgrid .tile.a{border-left:3px solid var(--lane1)} .cmpgrid .tile.b{border-left:3px solid var(--lane2)}
+.cmpgrid .dif{align-self:center;text-align:right;font-weight:600;padding-right:4px}
+@media (max-width:760px){.cmpgrid{grid-template-columns:1fr 1fr} .cmpgrid .hd:nth-child(1),.cmpgrid .hd:nth-child(4){display:none} .cmpgrid .lbl{grid-column:1/-1;padding-top:6px} .cmpgrid .dif{grid-column:1/-1;text-align:left;font-size:12px}}
+.cmpgrid .tile{min-width:0} .cmpgrid .tile .v{overflow-wrap:anywhere}
 .tile{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:10px 12px}
 .tile .k{font-size:12px;color:var(--muted)}
 .tile .v{font-size:22px;font-weight:700;line-height:1.2;margin-top:2px}
@@ -101,7 +94,7 @@ tr.dim td{color:var(--muted)}
 </head>
 <body>
 <div class="top">
-  <div><h1>T-Studio 매매 보고서 뷰어</h1><div class="meta" id="meta">생성 (서버 자료) · 뷰어 형식 v1.9 · 내부용 · 집계본만 읽는다(원본을 다시 읽지 않는다)</div></div>
+  <div><h1>T-Studio 매매 보고서 뷰어</h1><div class="meta" id="meta">생성 (서버 자료) · 뷰어 형식 v1 · 내부용 · 집계본만 읽는다(원본을 다시 읽지 않는다)</div></div>
   <div class="bar" id="controls" style="margin:0">
     <select id="scope"></select>
     <span class="seg" id="range"></span>
@@ -135,26 +128,15 @@ function isoWeekKey(d){ const dt=new Date(ymd(d)+'T00:00:00'); const day=(dt.get
 function weekRange(key){ const a=new Date(key+'T00:00:00'); const b=new Date(a); b.setDate(a.getDate()+4); const f=x=>String(x.getMonth()+1).padStart(2,'0')+'-'+String(x.getDate()).padStart(2,'0'); return f(a)+'~'+f(b); }
 // 운영자금 — 하루에 굴리는 돈(일일매수금액한도). 순손익을 이것으로 나눈 것이 «운영자금 대비 %», 그날 실제 매수금 합으로 나눈 것이 «매수금 대비 %».
 // ⚑ 사용자마다 다르다(2026-09-16) — 사람별로 기억한다. 기본 15,000,000원.
-// 웹 판은 사용자 ID로 서버에 저장한다. 본인 또는 관리자만 수정(2026-09-28).
+// 웹 판은 서버에 둔다(2026-09-16 저녁 · 사용자 결정): capitals={map:{사람:원}, save:(원)=>Promise} — 자기 것(«나»)만 고칠 수 있고 남의 값은 그 사람이 정한 값 그대로다.
 const CAPITAL_KEY='tstudio-viewer-capital-map';
 const SERVER_CAPS = capitals ? (capitals.map||{}) : null;
 const CAP_MAP = (()=>{ if(SERVER_CAPS) return {}; try{ const m=JSON.parse(localStorage.getItem(CAPITAL_KEY)||'{}'); return (m&&typeof m==='object')?m:{}; }catch(e){ return {}; } })();
-function capitalKey(g){ return SERVER_CAPS ? g?.owner : g?.person; }
-function canEditCapital(g){ return !!g && (!SERVER_CAPS || (!!g.owner && (g.owner===capitals.meId || (capitals.isAdmin && capitals.ownerSelection)))); }
-function capitalOf(g){ const v=Number((SERVER_CAPS || CAP_MAP)[capitalKey(g)]); return v>0?v:15000000; }
-async function setCapital(g,v){
-  if(!canEditCapital(g)) throw new Error('운영자금 변경 권한이 없습니다.');
-  if(!Number.isInteger(v)||v<=0||v>1e12) throw new Error('1원 이상 1조원 이하의 정수를 입력하세요.');
-  const key=capitalKey(g);
-  if(SERVER_CAPS){
-    const saved=await capitals.save(key,v);
-    if(saved.ownerUserId!==key || saved.capital!==v) throw new Error('저장 결과를 확인하지 못했습니다. 새로고침 후 확인하세요.');
-    SERVER_CAPS[key]=saved.capital; return;
-  }
-  CAP_MAP[key]=v; try{ localStorage.setItem(CAPITAL_KEY, JSON.stringify(CAP_MAP)); }catch(e){}
+function capitalOf(person){ const v=Number(SERVER_CAPS ? SERVER_CAPS[person] : CAP_MAP[person]); return v>0?v:15000000; }
+function setCapital(person,v){
+  if(SERVER_CAPS){ if(person!=='나') return Promise.resolve(); SERVER_CAPS[person]=v; return capitals.save(v); }
+  CAP_MAP[person]=v; try{ localStorage.setItem(CAPITAL_KEY, JSON.stringify(CAP_MAP)); }catch(e){} return Promise.resolve();
 }
-let capitalPending=false;
-let capitalNotice=null;
 let CAPITAL = 15000000;   // render()가 고른 묶음의 사람 값으로 매번 다시 채운다
 const pctOf=(net,base)=> base>0 ? net/base*100 : null;
 // 차트 자료(하루별 · 거래 종목 1분 경로 + 지수) — 로컬 자체 포함 판은 심겨 있고, 껍데기·웹 판은 그날을 펼칠 때 받는다.
@@ -176,13 +158,13 @@ const groups = [];
 {
   const map = new Map();
   for (const d of DATA.days){
-    const key = (d._owner||d.person)+'|'+(d.scope||'?');
-    if(!map.has(key)) map.set(key,{key,person:d.person,owner:d._owner,scope:d.scope,days:[]});
+    const key = d.person+'|'+(d.scope||'?');
+    if(!map.has(key)) map.set(key,{key,person:d.person,scope:d.scope,days:[]});
     map.get(key).days.push(d);
   }
   for (const g of map.values()){ g.days.sort((a,b)=>a.day<b.day?-1:1); g.first=g.days[0].day; g.last=g.days[g.days.length-1].day; groups.push(g); }
-  for (const g of groups) g.compareOnly = g.days.every(d=>d.compareOnly===true);   // 서버가 「비교만」으로 준 묶음 — 위 선택 상자에는 안 나오고 비교 상대 후보로만
-  groups.sort((a,b)=> (a.person==='나'?0:1)-(b.person==='나'?0:1) || b.last.localeCompare(a.last) || a.person.localeCompare(b.person) || a.key.localeCompare(b.key));
+  for (const g of groups) g.compareOnly = g.days.every(d=>d.compareOnly===true);   // 서버가 「비교만」으로 준 묶음 — 위 선택 상자에는 안 나오고 비교 탭의 B 후보로만
+  groups.sort((a,b)=> (a.person==='나'?0:1)-(b.person==='나'?0:1) || (a.last<b.last?1:-1));
 }
 const viewable = () => groups.filter(g=>!g.compareOnly);
 const state = { scope: viewable().length?viewable()[0].key:null, range:'all', tab:'daily', day:null };
@@ -205,7 +187,7 @@ function sum(days){
   for(const d of days){
     const c=d.counts||{}, m=d.money||{};
     o.trades+=c.trades||0; o.wins+=c.wins||0; o.losses+=c.losses||0; o.flats+=c.flats||0; o.net+=m.net||0;
-    for(const r of d.rows||[]){ const cost=r.cost??([r.buyAmount,r.sellAmount,r.net].every(Number.isFinite)?r.sellAmount-r.buyAmount-r.net:0); o.cost+=cost; o.buy+=r.buyAmount||0; if((r.net||0)>0) o.winSum+=r.net; else if((r.net||0)<0) o.lossSum+=r.net; const l=o.byLane[r.lane]||(o.byLane[r.lane]={trades:0,wins:0,net:0}); l.trades++; if((r.net||0)>0) l.wins++; l.net+=r.net||0;
+    for(const r of d.rows||[]){ o.cost+=r.cost||0; o.buy+=r.buyAmount||0; if((r.net||0)>0) o.winSum+=r.net; else if((r.net||0)<0) o.lossSum+=r.net; const l=o.byLane[r.lane]||(o.byLane[r.lane]={trades:0,wins:0,net:0}); l.trades++; if((r.net||0)>0) l.wins++; l.net+=r.net||0;
       const s=o.bySell[r.sellReason||'—']||(o.bySell[r.sellReason||'—']={trades:0,wins:0,net:0}); s.trades++; if((r.net||0)>0) s.wins++; s.net+=r.net||0; }
     if(o.best==null||(m.net||0)>o.best.net) o.best={day:d.day,net:m.net||0};
     if(o.worst==null||(m.net||0)<o.worst.net) o.worst={day:d.day,net:m.net||0};
@@ -228,17 +210,13 @@ function renderControls(){
   $('#tab').querySelectorAll('button').forEach(b=>b.onclick=()=>{state.tab=b.dataset.k; save(); render();});
   const g=groups.find(x=>x.key===state.scope); const person=g?g.person:'나';
   const cap=$('#capital'); cap.value=Math.round(CAPITAL).toLocaleString('ko-KR');
-  const editable = canEditCapital(g); cap.disabled=!editable||capitalPending;
-  cap.title = editable ? `${person}의 운영자금 — ${SERVER_CAPS?'서버에 저장 · 본인·관리자 변경 가능':'사용자마다 따로 기억한다'}` : `${person}의 운영자금 — 본인·관리자만 변경 가능`;
-  const msg=$('#capmsg'); if(msg) msg.textContent = capitalNotice?.key===capitalKey(g) ? capitalNotice.text : editable ? '' : '(본인·관리자만 변경)';
-  cap.onchange=async()=>{
-    if(!editable||capitalPending) return;
-    const raw=String(cap.value).replace(/,/g,'').trim(), v=/^\d+$/.test(raw)?Number(raw):NaN;
-    capitalPending=true; capitalNotice={key:capitalKey(g),text:'저장 중…'}; render();
-    try{ await setCapital(g,v); capitalNotice={key:capitalKey(g),text:'저장됨'}; }
-    catch(err){ capitalNotice={key:capitalKey(g),text:'저장 실패 — '+(err.message||err)}; }
-    finally{ capitalPending=false; render(); }
-  };
+  const mine = !SERVER_CAPS || person==='나'; cap.disabled=!mine;
+  cap.title = mine ? `${person}의 운영자금 — ${SERVER_CAPS?'서버에 저장된다 · 자기 것만 고칠 수 있다':'사용자마다 따로 기억한다'}` : `${person}의 운영자금 — 그 사람이 정한 값 · 여기서는 못 바꾼다`;
+  const msg=$('#capmsg'); if(msg) msg.textContent = mine ? '' : '(본인만 변경)';
+  cap.onchange=()=>{ const v=Number(String(cap.value).replace(/[^0-9]/g,'')); if(!(v>0)||!mine){ render(); return; }
+    setCapital(person,v).then(()=>{ if(msg&&SERVER_CAPS){ msg.textContent='저장됨'; setTimeout(()=>{ if(msg.textContent==='저장됨') msg.textContent=''; },2000); } })
+      .catch(err=>{ if(msg) msg.textContent='저장 실패 — '+(err.message||err); });
+    render(); };
 }
 
 // ── 타일 ─────────────────────────────────────────────────────────────────────
@@ -323,18 +301,17 @@ const axisWon = v => Math.abs(v)>=10000 ? (v/10000).toFixed(Math.abs(v)>=100000?
 
 // ── 본문 ─────────────────────────────────────────────────────────────────────
 function render(){
-  { const g=groups.find(x=>x.key===state.scope); CAPITAL=capitalOf(g); }
+  { const g=groups.find(x=>x.key===state.scope); CAPITAL=capitalOf(g?g.person:'나'); }
   renderControls();
   const days=groupDays();
   renderTiles(days);
-  $('#tiles').style.display=state.tab==='compare'?'none':'';
   const main=$('#main'); main.innerHTML='';
   if(!days.length){ main.innerHTML='<div class="card empty">이 범위에 집계본이 없다.</div>'; $('#day').innerHTML=''; return; }
   if(state.tab==='daily') renderDaily(days, main);
   else if(state.tab==='compare') renderCompare(main);
   else renderPeriod(days, main, state.tab==='weekly'?isoWeekKey:monthKey, state.tab==='weekly'?'주':'월');
   if(state.day && !days.some(d=>d.day===state.day)) state.day=null;
-  renderDay(state.tab==='compare'?null:days.find(d=>d.day===state.day));
+  renderDay(days.find(d=>d.day===state.day));
 }
 
 function renderDaily(days, main){
@@ -377,116 +354,90 @@ function renderPeriod(days, main, keyFn, unit){
   main.insertAdjacentHTML('beforeend',`<div class="card"><h2>${unit}별 표</h2><div class="tw"><table><tr><th>${unit}</th><th class="num">거래일</th><th class="num">거래</th><th class="num">이익/손실</th><th class="num">승률</th><th class="num">순손익</th><th class="num">운영자금 대비</th><th class="num">매수금액 · 매수금 대비</th><th class="num">거래일 평균</th><th class="num">최저 거래일</th><th>레인별</th></tr>${rows}</table></div><div class="small" style="margin-top:6px">${unit}별은 집계본만 합산한다 — 계좌가 다른 날은 위 묶음 선택으로 이미 갈라져 있다.</div></div>`);
 }
 
-// ── 비교 — 허용된 서로 다른 사용자 최대 3명. 계좌 묶음은 합치지 않는다. ──
-const CMP_COLORS=['var(--lane1)','var(--lane2)','var(--lane3)'];
-function comparisonSelection(all, anchor, second, third){
-  const A=all.find(g=>g.key===anchor);
-  if(!A) return [];
-  const others=all.filter(g=>g.person!==A.person);
-  const B=others.find(g=>g.key===second)||others[0];
-  if(!B) return [A];
-  const thirds=others.filter(g=>g.person!==B.person);
-  const C=third===''?null:(thirds.find(g=>g.key===third)||thirds[0]);
-  return C?[A,B,C]:[A,B];
-}
-function comparisonWindow(selected, range, mode){
-  const maps=selected.map(g=>new Map(g.days.map(d=>[d.day,d])));
-  let dates=[...new Set(maps.flatMap(m=>[...m.keys()]))].sort();
-  const latest=dates[dates.length-1];
-  if(mode!=='all') dates=dates.filter(day=>maps.every(m=>m.has(day)));
-  // 같은 날짜 집합에 범위를 한 번 적용한다. 각자의 최근 N일을 따로 뽑지 않는다.
-  if(range==='7'||range==='30') dates=dates.slice(-Number(range));
-  else if(range==='month'&&latest){const month=monthKey(latest);dates=dates.filter(d=>monthKey(d)===month);}
-  return {dates,maps,days:maps.map(m=>dates.filter(day=>m.has(day)).map(day=>m.get(day)))};
-}
-function comparisonExtremes(values){
-  if(values.some(v=>!Number.isFinite(v))) return null;
-  const low=Math.min(...values),high=Math.max(...values);
-  return {low,high,spread:high-low,lowIndexes:values.map((v,i)=>v===low?i:-1).filter(i=>i>=0),highIndexes:values.map((v,i)=>v===high?i:-1).filter(i=>i>=0)};
-}
+// ── 비교 — 두 사람(묶음)을 나란히. 다른 사람의 자료는 서버가 허용한 것만 내려오므로 여기서는 받은 묶음만 고를 수 있다. ──
+const CMP_A='var(--lane1)', CMP_B='var(--lane2)';   // 범주 팔레트 1·2번(파랑·주황) — 사람 A/B 고정
 function groupedBars(items, opt){
-  // 미수신 날짜(null)는 막대를 그리지 않는다. 거래 0건의 실제 0원과 구분한다.
-  const W=900,H=220,L=64,R=12,T=14,B=34,iw=W-L-R,ih=H-T-B,count=opt.names.length;
-  const vals=items.flatMap(i=>i.values.filter(Number.isFinite));let mx=Math.max(0,...vals),mn=Math.min(0,...vals);if(mx===mn){mx=1;mn=-1;}
-  const pad=(mx-mn)*.08;mx+=pad;mn-=pad;
-  const y=v=>T+(mx-v)/(mx-mn)*ih,y0=y(0),slot=iw/Math.max(items.length,1),bw=Math.max(1,Math.min(18,(slot-6)/count-2));
-  let html=`<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(opt.title)}">`;
-  for(const t of niceTicks(mn,mx,4)) html+=`<line x1="${L}" x2="${W-R}" y1="${y(t)}" y2="${y(t)}" stroke="var(--grid)"/><text x="${L-6}" y="${y(t)+4}" text-anchor="end" font-size="11" fill="var(--muted)">${axisWon(t)}</text>`;
-  html+=`<line x1="${L}" x2="${W-R}" y1="${y0}" y2="${y0}" stroke="var(--axis)"/>`;
+  // items: [{label, a, b}] · 두 계열 막대(같은 날 나란히) · 축은 원.
+  const W=900, H=220, L=64, R=12, T=14, B=34, iw=W-L-R, ih=H-T-B;
+  const vals=items.flatMap(i=>[i.a||0,i.b||0]); let mx=Math.max(0,...vals), mn=Math.min(0,...vals); if(mx===mn){mx=1;mn=-1;}
+  const pad=(mx-mn)*0.08; mx+=pad; mn-=pad;
+  const y=v=>T+(mx-v)/(mx-mn)*ih, y0=y(0), slot=iw/Math.max(items.length,1), bw=Math.max(3,Math.min(18,(slot-6)/2));
+  let s=`<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(opt.title)}">`;
+  for(const t of niceTicks(mn,mx,4)) s+=`<line x1="${L}" x2="${W-R}" y1="${y(t)}" y2="${y(t)}" stroke="var(--grid)"/><text x="${L-6}" y="${y(t)+4}" text-anchor="end" font-size="11" fill="var(--muted)">${axisWon(t)}</text>`;
+  s+=`<line x1="${L}" x2="${W-R}" y1="${y0}" y2="${y0}" stroke="var(--axis)"/>`;
   const every=Math.ceil(items.length/Math.max(1,Math.floor(iw/46)));
   items.forEach((it,i)=>{
-    const x0=L+i*slot+(slot-count*bw-(count-1)*2)/2;
-    it.values.forEach((v,j)=>{if(v==null)return;const x=x0+j*(bw+2),top=Math.min(y(v),y0),h=Math.max(1,Math.abs(y(v)-y0));
-      html+=`<rect data-series="${j}" x="${x}" y="${top}" width="${bw}" height="${h}" rx="2" fill="${CMP_COLORS[j]}"/>`;});
-    html+=`<rect x="${L+i*slot}" y="${T}" width="${slot}" height="${ih}" fill="transparent" data-i="${i}" class="hit"/>`;
-    if(i%every===0)html+=`<text x="${L+i*slot+slot/2}" y="${H-B+16}" text-anchor="middle" font-size="11" fill="var(--muted)">${esc(it.label)}</text>`;
+    const x0=L+i*slot+(slot-2*bw-2)/2;
+    for(const [k,v,c] of [['a',it.a,CMP_A],['b',it.b,CMP_B]]){ const val=v||0, x=k==='a'?x0:x0+bw+2, top=Math.min(y(val),y0), h=Math.max(1,Math.abs(y(val)-y0));
+      s+=`<rect x="${x}" y="${top}" width="${bw}" height="${h}" rx="3" fill="${c}" fill-opacity="${v==null?0.15:1}"/>`; }
+    s+=`<rect x="${L+i*slot}" y="${T}" width="${slot}" height="${ih}" fill="transparent" data-i="${i}" class="hit"/>`;
+    if(i%every===0) s+=`<text x="${L+i*slot+slot/2}" y="${H-B+16}" text-anchor="middle" font-size="11" fill="var(--muted)">${esc(it.label)}</text>`;
   });
-  return attach(html+'</svg><div class="tip"></div>',items,opt);
+  s+=`</svg><div class="tip"></div>`;
+  return attach(s, items, opt);
 }
 function renderCompare(main){
-  const selected=comparisonSelection(groups,state.scope,state.cmp,state.cmpThird);
-  if(selected.length<2){main.innerHTML='<div class="card empty">비교할 다른 사용자의 자료가 없다 — 허용된 보고서가 올라오면 여기서 선택할 수 있다.</div>';return;}
-  const [A,B,C]=selected;state.cmp=B.key;state.cmpThird=C?C.key:'';
-  const mode=state.cmpDates==='all'?'all':'common';
-  const others=groups.filter(g=>g.person!==A.person),thirds=others.filter(g=>g.person!==B.person);
+  const others=groups.filter(g=>g.key!==state.scope);
+  const A=groups.find(g=>g.key===state.scope);
+  if(!A||!others.length){ main.innerHTML='<div class="card empty">비교할 다른 사람의 자료가 없다 — 관리자가 「허용 표…」에서 «보기»나 «비교»를 열어 주면 그 사람의 묶음이 여기 나타난다.</div>'; return; }
+  if(!others.some(g=>g.key===state.cmp)) state.cmp=others[0].key;
+  const B=groups.find(g=>g.key===state.cmp);
   const nameOf=g=>`${g.person} · ${md(g.first)}~${md(g.last)}${g.compareOnly?' · 비교만':''}`;
-  const options=(list,key)=>list.map(g=>`<option value="${esc(g.key)}"${g.key===key?' selected':''}>${esc(nameOf(g))}</option>`).join('');
-  const {dates,maps,days}=comparisonWindow(selected,state.range,mode);
-  const names=selected.map(g=>g.person),caps=selected.map(g=>capitalOf(g)),stats=days.map(sum);
-  const picked=`<div class="cmp-picks"><span class="small">기준 · ${esc(A.person)}</span>
-    <label class="small">비교 1 <select id="cmpsel" aria-label="비교 사용자 1">${options(others,B.key)}</select></label>
-    <label class="small">비교 2 <select id="cmpthird" aria-label="비교 사용자 2"${thirds.length?'':' disabled'}><option value=""${C?'':' selected'}>선택 안 함 · 2명 비교</option>${options(thirds,C?C.key:'')}</select></label>
-    <label class="small">날짜 <select id="cmpdates" aria-label="비교 날짜 기준"><option value="common"${mode==='common'?' selected':''}>공통 날짜</option><option value="all"${mode==='all'?' selected':''}>전체 날짜</option></select></label></div>`;
-  const rangeText={all:'전체','30':'최근 30일','7':'최근 7일',month:'이달'}[state.range];
-  const coverage=dates.length?`${ymd(dates[0])}~${ymd(dates[dates.length-1])} · ${dates.length}일`: '공통 날짜 없음';
-  main.innerHTML=`<div class="card" id="cmphead"><div class="dayhead"><h2>${selected.length}명 비교</h2><span class="small">${selected.map((g,i)=>`<span style="color:${CMP_COLORS[i]}">${esc(g.person)}</span>`).join(' · ')}</span></div>${picked}
-    <div id="cmpcoverage" class="cmp-notice">${mode==='common'?'선택한 사용자 모두 자료가 있는 날짜':'한 명이라도 자료가 있는 날짜'} · ${rangeText} · ${coverage}</div>
-    <div class="small">기준 사용자는 위에서 바꿀 수 있다. 운영자금은 사용자별 설정값을 쓴다.</div></div>`;
-  document.getElementById('cmpsel').onchange=e=>{state.cmp=e.target.value;save();render();};
-  document.getElementById('cmpthird').onchange=e=>{state.cmpThird=e.target.value;save();render();};
-  document.getElementById('cmpdates').onchange=e=>{state.cmpDates=e.target.value;save();render();};
-  if(!dates.length){main.insertAdjacentHTML('beforeend','<div class="card empty">선택한 사용자 모두에게 보고서가 있는 날짜가 없다. 날짜를 «전체 날짜»로 바꾸면 각자의 기록을 볼 수 있다.</div>');return;}
-  const counts=days.map(d=>d.length);
-  if(mode==='all'&&new Set(counts).size>1)document.getElementById('cmphead').insertAdjacentHTML('beforeend',`<div class="cmp-notice">자료 일수가 다름: ${names.map((name,i)=>`${esc(name)} ${counts[i]}일`).join(' · ')}. 누락은 0원으로 채우지 않으므로 누적 성과를 그대로 순위로 해석하지 않는다.</div>`);
-  const tiles=stats.map((s,i)=>tileSet(s,caps[i]).map(t=>s.days?t:[t[0],'—','선택 날짜에 자료 없음']));
-  const metrics=stats.map((s,i)=>[s.net,pctOf(s.net,caps[i]),pctOf(s.net,s.buy),s.days?s.net/s.days:null,s.trades,s.winRate,s.trades?s.net/s.trades:null,s.worst?s.worst.net:null].map(v=>s.days?v:null));
-  const spreadFmt=(v,i)=>[1,2,5].includes(i)?`${v.toFixed(2)}%p`:i===4?`${n(v)}건`:wonPlain(v);
-  const spreadCell=i=>{
-    const e=comparisonExtremes(metrics.map(m=>m[i]));
-    if(!e)return '<span class="small">산출 불가</span><div class="s">일부 사용자 값 없음</div>';
-    if(e.spread===0)return '<b>동일</b><div class="s">최고·최저 차이 0</div>';
-    return `<b>${spreadFmt(e.spread,i)}</b><div class="s">최고 ${e.highIndexes.map(j=>esc(names[j])).join(' · ')}<br>최저 ${e.lowIndexes.map(j=>esc(names[j])).join(' · ')}</div>`;
-  };
-  const metricRows=tiles[0].map(([label],i)=>`<tr data-metric="${i}"><th scope="row">${label}</th>${tiles.map((t,j)=>`<td style="border-left:2px solid ${CMP_COLORS[j]}"><div class="v">${t[i][1]}</div><div class="s">${t[i][2]}</div></td>`).join('')}<td class="cmp-spread">${spreadCell(i)}</td></tr>`).join('');
-  document.getElementById('cmphead').insertAdjacentHTML('beforeend',`<div class="tw" style="margin-top:12px"><table class="cmp-summary ${selected.length===3?'three':''}" aria-label="사용자별 성과 비교"><thead><tr><th>지표</th>${selected.map((g,i)=>`<th style="color:${CMP_COLORS[i]}">${esc(g.person)}<div class="small">${counts[i]}거래일</div></th>`).join('')}<th>최고−최저 차이</th></tr></thead><tbody>${metricRows}</tbody></table></div><div class="small" style="margin-top:8px">최고·최저는 수치의 크기다. 거래 횟수가 많거나 승률이 높다는 것만으로 더 좋은 전략이라는 뜻은 아니다.</div>`);
-  const items=dates.map(day=>({key:day,label:md(day),values:maps.map(m=>m.has(day)?((m.get(day).money||{}).net||0):null)}));
-  const chart=document.createElement('div');chart.className='card';chart.innerHTML='<h2>날짜별 순손익</h2>';
-  chart.appendChild(groupedBars(items,{names,title:'사용자별 날짜 순손익',tip:it=>`${ymd(it.key)}<br>${names.map((name,i)=>`${esc(name)} ${it.values[i]==null?'자료 없음':won(it.values[i])}`).join('<br>')}`}));
-  chart.insertAdjacentHTML('beforeend',`<div class="legend">${names.map((name,i)=>`<span><i style="background:${CMP_COLORS[i]}"></i>${esc(name)}</span>`).join('')}<span class="small">자료 없는 날짜는 막대 없이 표시</span></div>`);
-  const dayCell=(d,i)=>{if(!d)return '<td colspan="3" class="num small">자료 없음</td>';const m=d.money||{},c=d.counts||{};return `<td class="num ${cls(m.net)}">${won(m.net)}</td><td class="num small">${c.trades||0}건 · ${c.trades?pctPlain((c.wins||0)/c.trades*100):'—'}</td><td class="num ${cls(m.net)}">${pct(pctOf(m.net||0,caps[i]))}</td>`;};
-  const dayHeader=names.map((name,i)=>`<th colspan="3" class="num" style="color:${CMP_COLORS[i]}">${esc(name)}</th>`).join('');
-  const dayRows=[...dates].reverse().map(day=>`<tr><td>${ymd(day)} <span class="small">${dow(day)}</span></td>${maps.map((m,i)=>dayCell(m.get(day),i)).join('')}</tr>`).join('');
-  chart.insertAdjacentHTML('beforeend',`<div class="tw" style="margin-top:8px"><table class="cmp-details"><thead><tr><th rowspan="2">날짜</th>${dayHeader}</tr><tr>${names.map(()=>'<th class="num">순손익</th><th class="num">거래·승률</th><th class="num">운영자금 대비</th>').join('')}</tr></thead><tbody>${dayRows}</tbody></table></div>`);main.appendChild(chart);
-  const empty={trades:0,wins:0,net:0};
-  const statCells=(s,hasData)=>hasData?`<td class="num">${s.trades}</td><td class="num">${s.trades?pctPlain(s.wins/s.trades*100):'—'}</td><td class="num ${cls(s.net)}">${won(s.net)}</td>`:'<td colspan="3" class="num small">자료 없음</td>';
-  const statHeader=label=>`<thead><tr><th rowspan="2">${label}</th>${dayHeader}</tr><tr>${names.map(()=>'<th class="num">거래</th><th class="num">승률</th><th class="num">순손익</th>').join('')}</tr></thead>`;
-  const statTable=(title,label,rows)=>`<div class="card"><h2>${title}</h2><div class="tw"><table class="cmp-details">${statHeader(label)}<tbody>${rows||`<tr><td colspan="${1+selected.length*3}" class="empty">거래 없음</td></tr>`}</tbody></table></div></div>`;
-  const laneRows=LANE_ORDER.map(l=>`<tr><td><span class="lane" style="background:${LANE_COLOR[l]}"></span>${esc(LANE_LABEL[l])}</td>${stats.map(s=>statCells(s.byLane[l]||empty,s.days)).join('')}</tr>`).join('');
-  const reasons=[...new Set(stats.flatMap(s=>Object.keys(s.bySell)))].sort((a,b)=>stats.reduce((v,s)=>v+(s.bySell[b]?.trades||0)-(s.bySell[a]?.trades||0),0));
-  const sellRows=reasons.map(k=>`<tr><td>${esc(k)}</td>${stats.map(s=>statCells(s.bySell[k]||empty,s.days)).join('')}</tr>`).join('');
-  main.insertAdjacentHTML('beforeend',statTable('레인별','레인',laneRows)+statTable('매도 사유별','매도 사유',sellRows));
-  // 모두 같은 날짜·종목을 거래한 첫 진입만 나란히 둔다. 거래 수량·전략 차이는 남는다.
-  const firstOf=ds=>{const out=new Map();for(const d of ds)for(const r of [...(d.rows||[])].sort((a,b)=>String(a.buyAt||'').localeCompare(String(b.buyAt||'')))){const key=d.day+'|'+r.code;if(!out.has(key))out.set(key,{day:d.day,r});}return out;};
-  const firsts=days.map(firstOf),shared=[...firsts[0].keys()].filter(k=>firsts.every(m=>m.has(k))).sort();
-  const firstTotals=names.map((name,i)=>`${esc(name)} ${won(shared.reduce((v,k)=>v+(firsts[i].get(k).r.net||0),0))}`).join(' · ');
-  const firstRows=shared.map(k=>{
-    const entries=firsts.map(m=>m.get(k)),prices=entries.map(x=>x.r.buyPrice),e=comparisonExtremes(prices),spread=e&&e.low>0?(e.high/e.low-1)*100:null;
-    return `<tr><td>${md(entries[0].day)}</td><td>${esc(entries[0].r.name)} <span class="small">${esc(entries[0].r.code)}</span></td>${entries.map(x=>`<td class="num">${esc(x.r.buyAt)}<div class="small">${n(x.r.buyPrice)}원 · ${esc(x.r.sellReason||'')}</div></td><td class="num ${cls(x.r.net)}">${won(x.r.net)}<div class="small">${pct(x.r.returnPct)}</div></td>`).join('')}<td class="num">${pctPlain(spread,2)}</td></tr>`;
-  }).join('');
-  main.insertAdjacentHTML('beforeend',`<div class="card"><h2>같은 날 같은 종목의 첫 진입</h2><div class="small">${selected.length}명 공통 ${shared.length}건 · ${firstTotals}</div><div class="tw" style="margin-top:8px"><table class="cmp-details"><thead><tr><th>날짜</th><th>종목</th>${names.map((name,i)=>`<th class="num" style="color:${CMP_COLORS[i]}">${esc(name)} 매수</th><th class="num">순손익·수익률</th>`).join('')}<th class="num">매수가격 폭</th></tr></thead><tbody>${firstRows||`<tr><td colspan="${3+selected.length*2}" class="empty">모두 같은 날 같은 종목을 산 기록이 없다</td></tr>`}</tbody></table></div><div class="small" style="margin-top:6px">매수가격 폭 = (최고 매수가 ÷ 최저 매수가 − 1) × 100. 재진입을 제외한 첫 거래이며, 조건식·수량·설정 차이가 있어 결과의 원인을 단정하지 않는다.</div></div>`);
-  const nth=ds=>{const out={},by=new Map();for(const d of ds)for(const r of d.rows||[]){const k=d.day+'|'+r.code;if(!by.has(k))by.set(k,[]);by.get(k).push(r);}for(const rows of by.values())rows.sort((a,b)=>String(a.buyAt||'').localeCompare(String(b.buyAt||''))).forEach((r,i)=>{const k=Math.min(i+1,4),o=out[k]||(out[k]={trades:0,wins:0,net:0});o.trades++;if((r.net||0)>0)o.wins++;o.net+=r.net||0;});return out;};
-  const entries=days.map(nth),nthRows=[1,2,3,4].map(i=>`<tr><td>${i}회차${i===4?' 이상':''}</td>${entries.map((s,j)=>statCells(s[i]||empty,counts[j])).join('')}</tr>`).join('');
-  main.insertAdjacentHTML('beforeend',statTable('재진입 — 같은 날 같은 종목의 매수 순번','순번',nthRows));
+  const dA=daysOfGroup(A.key), dB=daysOfGroup(B.key);
+  const capA=capitalOf(A.person), capB=capitalOf(B.person);
+  const byA=new Map(dA.map(d=>[d.day,d])), byB=new Map(dB.map(d=>[d.day,d]));
+  const dates=[...new Set([...byA.keys(),...byB.keys()])].sort();
+  const sA=sum(dA), sB=sum(dB);
+  const pick=`<label class="small">B <select id="cmpsel">${others.map(g=>`<option value="${esc(g.key)}"${g.key===state.cmp?' selected':''}>${esc(nameOf(g))} · ${g.days.length}일</option>`).join('')}</select></label>`;
+  const diffPct=(a,b)=> (a==null||b==null) ? '—' : `<span class="${cls(a-b)}">${(a-b>0?'+':a-b<0?'−':'')+Math.abs(a-b).toFixed(2)}%p</span>`;
+  const diffWon=(a,b)=> (a==null||b==null) ? '—' : `<span class="${cls(a-b)}">${won(a-b)}</span>`;
+  // 타일 순서(tileSet)와 같은 순서의 차이 칸 — 순손익 합 · 운영자금 대비 · 매수금 대비 · 거래일 평균 · 완결 거래 · 승률 · 건당 평균 · 최저 거래일
+  const diffs=[diffWon(sA.net,sB.net), diffPct(pctOf(sA.net,capA),pctOf(sB.net,capB)), diffPct(pctOf(sA.net,sA.buy),pctOf(sB.net,sB.buy)),
+    diffWon(sA.days?sA.net/sA.days:null, sB.days?sB.net/sB.days:null), `<span class="${cls(sA.trades-sB.trades)}">${(sA.trades-sB.trades>0?'+':'')+n(sA.trades-sB.trades)}건</span>`,
+    diffPct(sA.winRate,sB.winRate), diffWon(sA.trades?sA.net/sA.trades:null, sB.trades?sB.net/sB.trades:null), diffWon(sA.worst?sA.worst.net:null, sB.worst?sB.worst.net:null)];
+  // 좌우 비교 — 지표 한 줄에 A 타일 · B 타일 · 차이(2026-09-16 사용자 요청 「좌우로 비교」)
+  const cmpRows=(ta,tb,df)=>ta.map(([k,va,sa],i)=>`<div class="lbl">${k}</div><div class="tile a"><div class="v">${va}</div><div class="s">${sa}</div></div><div class="tile b"><div class="v">${tb[i][1]}</div><div class="s">${tb[i][2]}</div></div><div class="dif">${df[i]||'—'}</div>`).join('');
+  const head=`<div class="card"><div class="dayhead"><h2>비교 — <span style="color:${CMP_A}">A ${esc(nameOf(A))}</span> vs <span style="color:${CMP_B}">B ${esc(nameOf(B))}</span></h2>${pick}</div>
+    <div class="small">A는 위 선택 상자의 묶음, B는 여기서 고른다. 같은 범위(${{all:'전체','30':'최근 30일','7':'최근 7일',month:'이달'}[state.range]})를 두 사람에게 같이 건다. 두 사람은 조건식 원문도 설정도 다르므로 «무엇 때문에»를 하나로 지목하지 않는다 — 같은 날 같은 종목의 첫 진입만 짝지어 본다.</div>
+    <div class="cmpgrid" style="margin-top:10px">
+      <div class="hd"></div><div class="hd" style="color:${CMP_A}">A · ${esc(nameOf(A))} <span class="small">${sA.days}거래일</span></div><div class="hd" style="color:${CMP_B}">B · ${esc(nameOf(B))} <span class="small">${sB.days}거래일</span></div><div class="hd">차이 A − B</div>
+      ${cmpRows(tileSet(sA, capA), tileSet(sB, capB), diffs)}
+    </div></div>`;
+  main.innerHTML=head;
+  document.getElementById('cmpsel').onchange=e=>{ state.cmp=e.target.value; save(); render(); };
+  // 1. 날짜별 나란히
+  const items=dates.map(day=>({key:day,label:md(day),a:byA.has(day)?((byA.get(day).money||{}).net||0):null,b:byB.has(day)?((byB.get(day).money||{}).net||0):null}));
+  const c=document.createElement('div'); c.className='card'; c.innerHTML='<h2>날짜별 순손익 나란히</h2>';
+  c.appendChild(groupedBars(items,{title:'날짜별 순손익 A vs B',tip:it=>`${ymd(it.key)} · A ${it.a==null?'없음':won(it.a)} · B ${it.b==null?'없음':won(it.b)}`}));
+  c.insertAdjacentHTML('beforeend',`<div class="legend"><span><i style="background:${CMP_A}"></i>A ${esc(A.person)}</span><span><i style="background:${CMP_B}"></i>B ${esc(B.person)}</span><span class="small">비어 보이는 막대는 그날 자료가 없는 쪽</span></div>`);
+  const dayRows=[...dates].reverse().map(day=>{ const a=byA.get(day), b=byB.get(day); const cell=(d,cap)=>{ if(!d) return '<td class="num small" colspan="3">자료 없음</td>'; const m=d.money||{}, ct=d.counts||{}; return `<td class="num ${cls(m.net)}">${won(m.net)}</td><td class="num small">${ct.trades||0}건 · ${ct.trades?pctPlain((ct.wins||0)/ct.trades*100):'—'}</td><td class="num ${cls(m.net)} small">${pct(pctOf(m.net||0,cap))}</td>`; };
+    return `<tr><td>${ymd(day)} <span class="small">${dow(day)}</span></td>${cell(a,capA)}${cell(b,capB)}</tr>`; }).join('');
+  c.insertAdjacentHTML('beforeend',`<div class="tw" style="margin-top:8px"><table><tr><th>날짜</th><th class="num" style="color:${CMP_A}">A 순손익</th><th class="num">A 거래·승률</th><th class="num">A 운영자금 대비</th><th class="num" style="color:${CMP_B}">B 순손익</th><th class="num">B 거래·승률</th><th class="num">B 운영자금 대비</th></tr>${dayRows}</table></div>`);
+  main.appendChild(c);
+  // 2. 레인별 · 매도 사유별 나란히
+  const laneRows=LANE_ORDER.map(l=>{ const a=sA.byLane[l]||{trades:0,wins:0,net:0}, b=sB.byLane[l]||{trades:0,wins:0,net:0};
+    return `<tr><td><span class="lane" style="background:${LANE_COLOR[l]}"></span>${LANE_LABEL[l]}</td><td class="num">${a.trades}</td><td class="num">${a.trades?pctPlain(a.wins/a.trades*100):'—'}</td><td class="num ${cls(a.net)}">${won(a.net)}</td><td class="num">${b.trades}</td><td class="num">${b.trades?pctPlain(b.wins/b.trades*100):'—'}</td><td class="num ${cls(b.net)}">${won(b.net)}</td></tr>`; }).join('');
+  const reasons=[...new Set([...Object.keys(sA.bySell),...Object.keys(sB.bySell)])].sort((x,y)=>((sB.bySell[y]||{}).trades||0)+((sA.bySell[y]||{}).trades||0)-((sB.bySell[x]||{}).trades||0)-((sA.bySell[x]||{}).trades||0));
+  const sellRows=reasons.map(k=>{ const a=sA.bySell[k]||{trades:0,wins:0,net:0}, b=sB.bySell[k]||{trades:0,wins:0,net:0};
+    return `<tr><td>${esc(k)}</td><td class="num">${a.trades}</td><td class="num">${a.trades?pctPlain(a.wins/a.trades*100):'—'}</td><td class="num ${cls(a.net)}">${won(a.net)}</td><td class="num">${b.trades}</td><td class="num">${b.trades?pctPlain(b.wins/b.trades*100):'—'}</td><td class="num ${cls(b.net)}">${won(b.net)}</td></tr>`; }).join('');
+  const hdr=`<tr><th></th><th class="num" style="color:${CMP_A}">A 거래</th><th class="num">A 승률</th><th class="num">A 순손익</th><th class="num" style="color:${CMP_B}">B 거래</th><th class="num">B 승률</th><th class="num">B 순손익</th></tr>`;
+  main.insertAdjacentHTML('beforeend',`<div class="grid2"><div class="card"><h2>레인별</h2><div class="tw"><table>${hdr}${laneRows}</table></div></div><div class="card"><h2>매도 사유별</h2><div class="tw"><table>${hdr}${sellRows||'<tr><td colspan="7" class="empty">—</td></tr>'}</table></div></div></div>`);
+  // 3. 같은 날 같은 종목의 첫 진입 — 통제 비교
+  const firstOf=(days)=>{ const m=new Map(); for(const d of days){ for(const r of [...(d.rows||[])].sort((x,y)=>x.buyAt<y.buyAt?-1:1)){ const k=d.day+'|'+r.code; if(!m.has(k)) m.set(k,{day:d.day,r}); } } return m; };
+  const fA=firstOf(dA), fB=firstOf(dB); const shared=[...fA.keys()].filter(k=>fB.has(k)).sort();
+  let netA=0, netB=0, earlierA=0;
+  const pairRows=shared.map(k=>{ const a=fA.get(k), b=fB.get(k); netA+=a.r.net||0; netB+=b.r.net||0; if(a.r.buyAt<b.r.buyAt) earlierA++;
+    const dp=b.r.buyPrice&&a.r.buyPrice?((b.r.buyPrice/a.r.buyPrice-1)*100):null;
+    return `<tr><td>${md(a.day)}</td><td>${esc(a.r.name)} <span class="small">${esc(a.r.code)}</span></td><td class="num">${a.r.buyAt}<div class="small">${n(a.r.buyPrice)} · ${esc(a.r.sellReason||'')}</div></td><td class="num ${cls(a.r.net)}">${won(a.r.net)}<div class="small">${pct(a.r.returnPct)}</div></td><td class="num">${b.r.buyAt}<div class="small">${n(b.r.buyPrice)} · ${esc(b.r.sellReason||'')}</div></td><td class="num ${cls(b.r.net)}">${won(b.r.net)}<div class="small">${pct(b.r.returnPct)}</div></td><td class="num small">${dp==null?'—':pct(dp)}</td></tr>`; }).join('');
+  main.insertAdjacentHTML('beforeend',`<div class="card"><h2>같은 날 같은 종목의 첫 진입 <span class="small">${shared.length}짝 · A 합 <span class="${cls(netA)}">${won(netA)}</span> · B 합 <span class="${cls(netB)}">${won(netB)}</span> · A가 먼저 산 것 ${earlierA}짝</span></h2>
+    <div class="tw"><table><tr><th>날짜</th><th>종목</th><th class="num" style="color:${CMP_A}">A 매수 · 가격 · 사유</th><th class="num">A 순손익</th><th class="num" style="color:${CMP_B}">B 매수 · 가격 · 사유</th><th class="num">B 순손익</th><th class="num">B 매수가 − A</th></tr>${pairRows||'<tr><td colspan="7" class="empty">같은 날 같은 종목을 둘 다 산 짝이 없다</td></tr>'}</table></div>
+    <div class="small" style="margin-top:6px">통제 비교 — 조건식과 설정이 다르므로 이것만 짝지어 본다. 재진입은 빼고 그날 그 종목의 첫 거래만이다.</div></div>`);
+  // 4. 재진입 순번별
+  const nth=(days)=>{ const out={}; const by={}; for(const d of days) for(const r of d.rows||[]){ (by[d.day+'|'+r.code]=by[d.day+'|'+r.code]||[]).push(r); }
+    for(const k in by){ by[k].sort((x,y)=>x.buyAt<y.buyAt?-1:1).forEach((r,i)=>{ const n=Math.min(i+1,4); const o=out[n]=out[n]||{trades:0,wins:0,net:0}; o.trades++; if((r.net||0)>0) o.wins++; o.net+=r.net||0; }); } return out; };
+  const nA=nth(dA), nB=nth(dB);
+  const nthRows=[1,2,3,4].map(i=>{ const a=nA[i]||{trades:0,wins:0,net:0}, b=nB[i]||{trades:0,wins:0,net:0}; return `<tr><td>${i}회차${i===4?' 이상':''}</td><td class="num">${a.trades}</td><td class="num">${a.trades?pctPlain(a.wins/a.trades*100):'—'}</td><td class="num ${cls(a.net)}">${won(a.net)}</td><td class="num">${b.trades}</td><td class="num">${b.trades?pctPlain(b.wins/b.trades*100):'—'}</td><td class="num ${cls(b.net)}">${won(b.net)}</td></tr>`; }).join('');
+  main.insertAdjacentHTML('beforeend',`<div class="card"><h2>재진입 — 같은 날 같은 종목을 몇 번째로 샀나</h2><div class="tw"><table>${hdr.replace('<th></th>','<th>순번</th>')}${nthRows}</table></div></div>`);
 }
 
 // ── 하루 상세 ─────────────────────────────────────────────────────────────────
@@ -727,11 +678,10 @@ function serverMode(){
       if(!base){ main.innerHTML = '<div class="card empty">자료를 받지 못했다 — ' + esc(failed.join(' · ')) + '</div>'; return; }
       days.sort((a,b)=> a.day<b.day?-1 : a.day>b.day?1 : a.person<b.person?-1:1);
       const m = document.getElementById('meta'); if(m) m.textContent = m.textContent.replace('(서버 자료)', base.generatedAt||'') + (failed.length?' · 못 받음: '+failed.join(' · '):'');
-      const capMap = {}; for(const o of owners){ if(o.capital>0) capMap[o.userId]=Number(o.capital); }
-      if(lst.me.capital>0) capMap[lst.me.userId]=Number(lst.me.capital);
+      const capMap = {}; for(const o of owners){ const nm = o.userId===lst.me.userId ? '나' : o.email.split('@')[0]; if(o.capital>0) capMap[nm]=Number(o.capital); }
+      if(lst.me.capital>0) capMap['나']=Number(lst.me.capital);
       boot(Object.assign({}, base, {days}), d => call('charts', {ownerUserId:d._owner, day:d.day}).then(r => r.data || null),
-           {map:capMap, meId:lst.me.userId, isAdmin:lst.me.isAdmin===true, ownerSelection:lst.capitalOwnerSelection===true,
-            save: (ownerUserId,v) => call('capital', {ownerUserId,capital:v})});
+           {map:capMap, save: v => call('capital', {capital:v})});
     } catch(err){
       if(err.auth) showLogin(err.message==='로그인이 필요하다'?'':err.message); else main.innerHTML = '<div class="card empty">' + esc(err.message||err) + '</div>';
     }
